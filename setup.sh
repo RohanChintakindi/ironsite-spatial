@@ -22,7 +22,12 @@ else
 fi
 
 echo "=== Installing VGGT ==="
-pip install -q vggt
+if [ ! -d "vggt" ]; then
+    git clone https://github.com/facebookresearch/vggt.git
+    pip install -e vggt -q
+else
+    echo "VGGT already installed"
+fi
 
 echo "=== GPU Check ==="
 python -c "

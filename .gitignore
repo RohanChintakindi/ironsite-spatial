@@ -3,6 +3,7 @@ __pycache__/
 output/
 Grounded-SAM-2/
 VGGT-X/
+vggt/
 *.mp4
 *.npy
 scene/
