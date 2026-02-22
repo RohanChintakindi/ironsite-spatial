@@ -217,11 +217,11 @@ def save_colmap(extrinsics, intrinsics, depth, image_paths, images_np, output_di
 
         # Add 3D points to reconstruction
         for j in range(len(all_points)):
-            pt = pycolmap.Point3D(
-                xyz=all_points[j],
-                color=all_colors[j],
+            reconstruction.add_point3D(
+                all_points[j].astype(np.float64),
+                pycolmap.Track(),
+                all_colors[j].astype(np.uint8),
             )
-            reconstruction.add_point3D(pt)
 
         print(f"Added {len(all_points)} 3D points")
 
