@@ -225,7 +225,9 @@ def _step_events(config: dict, data: dict) -> dict:
     _ensure_project_on_path()
     from utils.events import extract_events
 
-    event_result = extract_events(data["scene_graphs"])
+    recon_data = data.get("recon_data", {})
+    cam_smooth = recon_data.get("cam_positions_smooth")
+    event_result = extract_events(data["scene_graphs"], cam_smooth)
     data["event_result"] = event_result
 
     # Save to disk

@@ -238,7 +238,7 @@ def main():
     print("=" * 60)
     t0 = time.time()
 
-    event_result = extract_events(scene_graphs)
+    event_result = extract_events(scene_graphs, recon_data.get("cam_positions_smooth"))
 
     # Save events
     import json as _json

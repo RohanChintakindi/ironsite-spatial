@@ -29,12 +29,7 @@ class SpatialMemory:
         self.meta_path = os.path.join(store_dir, "meta.json")
         self.id_map = []
 
-        if HAS_FAISS and os.path.exists(self.faiss_path):
-            self.index = faiss.read_index(self.faiss_path)
-            with open(self.meta_path) as f:
-                self.id_map = json.load(f).get("id_map", [])
-            print(f"  Loaded existing memory ({self.index.ntotal} entries)")
-        elif HAS_FAISS:
+        if HAS_FAISS:
             self.index = faiss.IndexFlatL2(self.EMBED_DIM)
         else:
             self.index = None
@@ -72,7 +67,8 @@ class SpatialMemory:
         entries = []
         embs = []
 
-        with open(self.jsonl, "a") as f:
+        # Overwrite (not append) to avoid accumulating duplicates across re-runs
+        with open(self.jsonl, "w") as f:
             for sg in scene_graphs:
                 # Build detection list for embedding
                 dets = sg["objects"]

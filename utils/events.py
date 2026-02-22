@@ -47,8 +47,13 @@ def _classify(label):
 # Core event extraction
 # ---------------------------------------------------------------------------
 
-def extract_events(scene_graphs):
+def extract_events(scene_graphs, cam_positions_smooth=None):
     """Extract all events from scene graph sequence.
+
+    Args:
+        scene_graphs: list of scene graph dicts
+        cam_positions_smooth: (N,3) numpy array of smoothed camera positions.
+            If provided, used for distance calculation instead of raw noisy poses.
 
     Returns dict with:
         events: list of Event dicts
@@ -215,9 +220,15 @@ def extract_events(scene_graphs):
         frame_activities.append((fi, ts, ts_str, activity))
 
         # ---------------------------------------------------------------
-        # 5. Movement tracking
+        # 5. Movement tracking (use smoothed positions if available)
         # ---------------------------------------------------------------
-        if cam_pos is not None:
+        if cam_positions_smooth is not None and fi < len(cam_positions_smooth):
+            movement_segments.append({
+                "frame_index": fi,
+                "timestamp": ts,
+                "position": cam_positions_smooth[fi].tolist(),
+            })
+        elif cam_pos is not None:
             movement_segments.append({
                 "frame_index": fi,
                 "timestamp": ts,
