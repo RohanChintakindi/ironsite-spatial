@@ -19,10 +19,10 @@ export default function Header() {
           <div className="absolute inset-0 w-5 h-5 bg-[#f59e0b]/20 rounded-full blur-md" />
         </div>
         <span className="text-[13px] font-bold tracking-[0.2em] uppercase text-[#e4e4e7]">
-          Ironsite
+          Iron
         </span>
         <span className="text-[13px] font-bold tracking-[0.2em] uppercase text-[#f59e0b]">
-          Spatial
+          Vision
         </span>
       </div>
       <div className="flex items-center gap-4">

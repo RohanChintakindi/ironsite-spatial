@@ -104,7 +104,7 @@ export function useStepData() {
 
   useEffect(() => {
     if (!runId) return
-    fetchOnComplete('memory', async () => {
+    fetchOnComplete('scene_graphs', async () => {
       try {
         const data = await getDashboardData(runId)
         setDashboardData(data)
@@ -113,7 +113,7 @@ export function useStepData() {
       }
     })
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [runId, steps.memory.status])
+  }, [runId, steps.scene_graphs.status])
 
   useEffect(() => {
     if (!runId) return

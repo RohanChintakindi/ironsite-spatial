@@ -297,6 +297,27 @@ def _step_reconstruction(config: dict, data: dict) -> dict:
 def _step_scene_graphs(config: dict, data: dict) -> dict:
     """Step 4: Build scene graphs."""
     _ensure_project_on_path()
+
+    cache_dir = _get_cache_dir(config)
+    cache_path = os.path.join(cache_dir, "scene_graphs.pkl")
+
+    cached = _load_cache(cache_path)
+    if cached:
+        logger.info("Scene graphs: loaded from cache (%d graphs)", len(cached))
+        data["scene_graphs"] = cached
+        all_labels = set()
+        for sg in cached:
+            for obj in sg["objects"]:
+                all_labels.add(obj["label"])
+        return {
+            "num_graphs": len(cached),
+            "unique_classes": sorted(all_labels),
+            "avg_objects_per_frame": round(
+                float(np.mean([sg["num_objects"] for sg in cached])), 1
+            ) if cached else 0,
+            "cached": True,
+        }
+
     from utils.scene_graph import build_scene_graphs
 
     scene_graphs = build_scene_graphs(
@@ -306,6 +327,7 @@ def _step_scene_graphs(config: dict, data: dict) -> dict:
         data["timestamps"],
         data["frame_indices"],
     )
+    _save_cache(cache_path, scene_graphs)
 
     data["scene_graphs"] = scene_graphs
 
@@ -349,11 +371,30 @@ def _step_graph(config: dict, data: dict) -> dict:
 def _step_events(config: dict, data: dict) -> dict:
     """Step 4.75: Extract events from scene graphs."""
     _ensure_project_on_path()
+
+    cache_dir = _get_cache_dir(config)
+    cache_path = os.path.join(cache_dir, "events.pkl")
+
+    cached = _load_cache(cache_path)
+    if cached:
+        logger.info("Events: loaded from cache (%d events)", len(cached.get("events", [])))
+        data["event_result"] = cached
+        stats = cached.get("stats", {})
+        return {
+            "num_events": len(cached.get("events", [])),
+            "timeline_segments": len(cached.get("timeline", [])),
+            "production_pct": stats.get("production_pct", 0),
+            "prep_pct": stats.get("prep_pct", 0),
+            "downtime_pct": stats.get("downtime_pct", 0),
+            "cached": True,
+        }
+
     from utils.events import extract_events
 
     recon_data = data.get("recon_data", {})
     cam_smooth = recon_data.get("cam_positions_smooth")
     event_result = extract_events(data["scene_graphs"], cam_smooth)
+    _save_cache(cache_path, event_result)
     data["event_result"] = event_result
 
     output_dir = data["output_dir"]
@@ -377,6 +418,24 @@ def _step_memory(config: dict, data: dict) -> dict:
 
     output_dir = data["output_dir"]
     memory_dir = os.path.join(output_dir, "memory_store")
+
+    # Check if memory store already exists on disk
+    meta_path = os.path.join(memory_dir, "meta.json")
+    if os.path.exists(meta_path):
+        try:
+            with open(meta_path) as f:
+                meta = json.load(f)
+            memory = SpatialMemory(memory_dir)
+            memory.id_map = meta.get("id_map", [])
+            data["memory"] = memory
+            logger.info("Memory: loaded from disk (%d entries)", len(memory.id_map))
+            return {
+                "entries": len(memory.id_map),
+                "size_kb": meta.get("size_kb", 0),
+                "cached": True,
+            }
+        except Exception:
+            pass
 
     memory = SpatialMemory(memory_dir)
     memory.ingest(data["scene_graphs"], config["video_path"])

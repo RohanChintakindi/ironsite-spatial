@@ -4,7 +4,7 @@ import Dashboard from '../viz/Dashboard'
 export default function Analytics() {
   return (
     <Chapter
-      step="memory"
+      step="scene_graphs"
       title="Analytics Dashboard"
       subtitle="Aggregated spatial analytics: detection frequency, depth distribution, temporal patterns, and spatial density."
     >

@@ -35,8 +35,7 @@ export default function Hero() {
           transition={{ duration: 0.7, delay: 0.15, ease: [0.16, 1, 0.3, 1] }}
           className="text-5xl font-extrabold tracking-tight text-[#e4e4e7] mb-3"
         >
-          IRONSITE{' '}
-          <span className="text-[#f59e0b]">SPATIAL</span>
+          IRON<span className="text-[#f59e0b]">VISION</span>
         </motion.h1>
 
         <motion.p
