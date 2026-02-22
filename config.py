@@ -1,6 +1,8 @@
 """
 Configuration for the Ironsite Spatial Awareness Pipeline.
 """
+import os as _os
+_PROJECT_ROOT = _os.path.dirname(_os.path.abspath(__file__))
 
 # --- Video Preprocessing ---
 KEYFRAME_INTERVAL = 10  # Extract every Nth frame (10 = ~0.67s at 15fps, ~450 frames for 5min)
@@ -24,8 +26,8 @@ REDETECT_EVERY = 50
 TRACK_CHUNK_SIZE = 500  # frames per SAM2 tracking chunk
 
 # SAM2 model config
-SAM2_CHECKPOINT = "Grounded-SAM-2/checkpoints/sam2.1_hiera_small.pt"
-SAM2_CONFIG = "configs/sam2.1/sam2.1_hiera_s.yaml"
+SAM2_CHECKPOINT = _os.path.join(_PROJECT_ROOT, "Grounded-SAM-2", "checkpoints", "sam2.1_hiera_small.pt")
+SAM2_CONFIG = "configs/sam2.1/sam2.1_hiera_s.yaml"  # relative to Grounded-SAM-2 (expected by sam2)
 
 # --- Analytic Taxonomy ---
 # Maps noisy detection labels to clean analytic categories

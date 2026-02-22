@@ -11,7 +11,8 @@ import shutil
 import torch
 import numpy as np
 
-sys.path.insert(0, "Grounded-SAM-2")
+_PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(0, os.path.join(_PROJECT_ROOT, "Grounded-SAM-2"))
 
 from config import GDINO_MODEL_ID, LABEL_TO_ANALYTIC, TRACK_CHUNK_SIZE
 
