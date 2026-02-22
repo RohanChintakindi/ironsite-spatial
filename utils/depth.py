@@ -1,6 +1,8 @@
 """
-3D reconstruction via FastVGGT.
-Runs FastVGGT → parses COLMAP output + depth maps → returns poses, depths, point cloud.
+3D reconstruction via VGGT-X or FastVGGT.
+Supports both backends:
+  - vggtx: VGGT-X with global alignment → metric depth (slower)
+  - fastvggt: FastVGGT with token merging → relative depth (faster)
 """
 
 import subprocess
@@ -36,6 +38,55 @@ def run_fastvggt(scene_dir, output_dir, merging=6, merge_ratio=0.9,
 
     elapsed = time.time() - t0
     print(f"FastVGGT completed in {elapsed:.1f}s")
+
+
+def run_vggtx(scene_dir, chunk_size=256, max_query_pts=2048, max_points=500000):
+    """Run VGGT-X with global alignment (metric depth).
+
+    VGGT-X outputs to {parent}_vggt_x/{scene_name}/ with:
+      - sparse/0/cameras.bin, images.bin, points3D.bin (COLMAP format)
+      - estimated_depths/{frame}_depth.npy (per-frame metric depth maps)
+    """
+    vggtx_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "VGGT-X")
+    if not os.path.exists(vggtx_dir):
+        raise FileNotFoundError(
+            f"VGGT-X not found at {vggtx_dir}. Run:\n"
+            f"  git clone --recursive https://github.com/Linketic/VGGT-X.git\n"
+            f"  pip install -r VGGT-X/requirements.txt"
+        )
+
+    cmd_parts = [
+        "python", "-u", f"{vggtx_dir}/demo_colmap.py",
+        f"--scene_dir", scene_dir,
+        f"--chunk_size", str(chunk_size),
+        f"--max_query_pts", str(max_query_pts),
+        f"--max_points_for_colmap", str(max_points),
+        "--shared_camera",
+        "--use_ga",
+        "--save_depth",
+    ]
+
+    cmd = " ".join(cmd_parts)
+    print(f"Running VGGT-X:\n  {cmd}\n")
+
+    t0 = time.time()
+    # Stream output in real-time so user sees progress
+    proc = subprocess.Popen(cmd, shell=True, stdout=subprocess.PIPE,
+                            stderr=subprocess.STDOUT, text=True, bufsize=1)
+    for line in proc.stdout:
+        print(f"  [VGGT-X] {line}", end="")
+    proc.wait()
+
+    if proc.returncode != 0:
+        raise RuntimeError("VGGT-X failed! Check errors above.")
+
+    elapsed = time.time() - t0
+    print(f"\nVGGT-X completed in {elapsed:.1f}s")
+
+    # VGGT-X outputs to {parent}_vggt_x/{scene_name}/
+    parent = os.path.dirname(scene_dir)
+    scene_name = os.path.basename(scene_dir)
+    return os.path.join(f"{parent}_vggt_x", scene_name)
 
 
 def find_colmap_output(output_dir):
@@ -209,13 +260,96 @@ def unproject_to_world(cx_px, cy_px, depth, intrinsics, extrinsics):
 
 
 def run_full_3d_pipeline(scene_dir, output_dir, merging=6, merge_ratio=0.9,
-                         depth_conf_thresh=3.0, max_points=100000, num_keyframes=0):
-    """Run FastVGGT and load predictions directly (no COLMAP roundtrip)."""
+                         depth_conf_thresh=3.0, max_points=100000, num_keyframes=0,
+                         backend="vggtx", chunk_size=256, max_query_pts=2048,
+                         vggtx_max_points=500000):
+    """Run 3D reconstruction pipeline.
+
+    backend="vggtx": VGGT-X with global alignment (metric depth, slower)
+    backend="fastvggt": FastVGGT with token merging (relative depth, faster)
+    """
+
+    if backend == "vggtx":
+        return _run_vggtx_pipeline(scene_dir, output_dir, chunk_size,
+                                    max_query_pts, vggtx_max_points, num_keyframes)
+    else:
+        return _run_fastvggt_pipeline(scene_dir, output_dir, merging, merge_ratio,
+                                      depth_conf_thresh, max_points, num_keyframes)
+
+
+def _run_vggtx_pipeline(scene_dir, output_dir, chunk_size, max_query_pts,
+                         max_points, num_keyframes):
+    """VGGT-X backend: metric depth via global alignment + COLMAP output."""
+
+    # Check if VGGT-X output already exists
+    parent = os.path.dirname(scene_dir)
+    scene_name = os.path.basename(scene_dir)
+    vggtx_out = os.path.join(f"{parent}_vggt_x", scene_name)
+
+    try:
+        colmap_dir = find_colmap_output(vggtx_out)
+        print(f"Found existing VGGT-X reconstruction: {colmap_dir}")
+    except FileNotFoundError:
+        vggtx_out = run_vggtx(scene_dir, chunk_size=chunk_size,
+                               max_query_pts=max_query_pts, max_points=max_points)
+        colmap_dir = find_colmap_output(vggtx_out)
+
+    # Parse COLMAP (same as notebook)
+    intrinsics, image_data, points_xyz, points_rgb, img_to_points3d = parse_colmap(colmap_dir)
+
+    # Load depth maps
+    depth_dir = find_depth_dir(vggtx_out)
+    depth_map_cache = load_depth_maps(depth_dir, num_keyframes)
+
+    # Sanity check: VGGT-X with GA should give metric depth in meters
+    if depth_map_cache:
+        all_depths = []
+        for dep in depth_map_cache.values():
+            valid = dep[np.isfinite(dep) & (dep > 0)]
+            if len(valid) > 0:
+                all_depths.append(valid)
+        if all_depths:
+            all_depths = np.concatenate(all_depths)
+            print(f"  Depth stats (metric): min={all_depths.min():.2f}m, "
+                  f"max={all_depths.max():.2f}m, median={np.median(all_depths):.2f}m")
+
+    # Build camera trajectory
+    cam_positions = []
+    for fname in sorted(image_data.keys()):
+        cam_positions.append(image_data[fname]["cam_center"])
+    cam_positions = np.array(cam_positions) if cam_positions else np.zeros((0, 3))
+
+    # Smooth trajectory
+    cam_positions_smooth = _smooth_trajectory(cam_positions)
+    total_dist = _compute_distance(cam_positions_smooth)
+
+    print(f"\n3D Reconstruction Summary (VGGT-X):")
+    print(f"  Camera poses: {len(image_data)}")
+    print(f"  Point cloud: {len(points_xyz)} points")
+    print(f"  Depth maps: {len(depth_map_cache)}")
+    print(f"  Worker distance: {total_dist:.1f}m")
+
+    return {
+        "intrinsics": intrinsics,
+        "image_data": image_data,
+        "points_xyz": points_xyz,
+        "points_rgb": points_rgb,
+        "img_to_points3d": img_to_points3d,
+        "depth_map_cache": depth_map_cache,
+        "cam_positions": cam_positions,
+        "cam_positions_smooth": cam_positions_smooth,
+        "total_distance": total_dist,
+        "colmap_dir": colmap_dir,
+    }
+
+
+def _run_fastvggt_pipeline(scene_dir, output_dir, merging, merge_ratio,
+                            depth_conf_thresh, max_points, num_keyframes):
+    """FastVGGT backend: relative depth via token merging."""
 
     recon_dir = os.path.join(output_dir, "recon")
     npz_path = os.path.join(recon_dir, "predictions.npz")
 
-    # Run FastVGGT if predictions don't exist yet
     if not os.path.exists(npz_path):
         run_fastvggt(scene_dir, recon_dir, merging, merge_ratio,
                      depth_conf_thresh, max_points)
@@ -223,15 +357,12 @@ def run_full_3d_pipeline(scene_dir, output_dir, merging=6, merge_ratio=0.9,
     if not os.path.exists(npz_path):
         raise FileNotFoundError(f"FastVGGT did not produce {npz_path}")
 
-    # Load predictions directly from .npz
     print(f"Loading predictions from {npz_path}")
     data = np.load(npz_path, allow_pickle=True)
-    extrinsics_all = data["extrinsics"]   # (N, 4, 4)
-    intrinsics_all = data["intrinsics"]   # (N, 3, 3)
+    extrinsics_all = data["extrinsics"]
+    intrinsics_all = data["intrinsics"]
     image_names = list(data["image_names"])
-    orig_hw = data["orig_hw"]  # [H, W]
 
-    # Use first frame's intrinsics as shared (same as notebook)
     K = intrinsics_all[0]
     fx, fy = float(K[0, 0]), float(K[1, 1])
     cx, cy = float(K[0, 2]), float(K[1, 2])
@@ -242,29 +373,21 @@ def run_full_3d_pipeline(scene_dir, output_dir, merging=6, merge_ratio=0.9,
     ], dtype=np.float32)
     print(f"  Intrinsics: fx={fx:.1f}, fy={fy:.1f}, cx={cx:.1f}, cy={cy:.1f}")
 
-    # Build per-image data (same format as notebook's frame_to_extri)
     image_data = {}
     cam_positions = []
     for i, fname in enumerate(image_names):
-        T = extrinsics_all[i].astype(np.float32)  # 4x4 world-to-camera
+        T = extrinsics_all[i].astype(np.float32)
         R = T[:3, :3]
         t = T[:3, 3]
-        cam_center = -R.T @ t  # camera position in world coords
-
-        image_data[fname] = {
-            "extrinsics": T,
-            "cam_center": cam_center,
-        }
+        cam_center = -R.T @ t
+        image_data[fname] = {"extrinsics": T, "cam_center": cam_center}
         cam_positions.append(cam_center)
 
     cam_positions = np.array(cam_positions) if cam_positions else np.zeros((0, 3))
-    print(f"  Camera poses: {len(image_data)}")
 
-    # Load depth maps
     depth_dir = find_depth_dir(recon_dir)
     depth_map_cache = load_depth_maps(depth_dir, num_keyframes)
 
-    # Load point cloud from PLY if available
     ply_path = os.path.join(recon_dir, "sparse", "points.ply")
     points_xyz = np.zeros((0, 3))
     points_rgb = np.zeros((0, 3), dtype=np.uint8)
@@ -274,41 +397,46 @@ def run_full_3d_pipeline(scene_dir, output_dir, merging=6, merge_ratio=0.9,
             cloud = trimesh.load(ply_path)
             points_xyz = np.array(cloud.vertices)
             points_rgb = np.array(cloud.colors[:, :3]) if cloud.colors is not None else np.zeros((len(points_xyz), 3), dtype=np.uint8)
-            print(f"  Point cloud: {len(points_xyz)} points")
         except Exception:
-            print("  Point cloud: failed to load PLY")
-    else:
-        print("  Point cloud: no PLY file")
+            pass
 
-    # Smooth camera trajectory
-    if len(cam_positions) > 10:
-        window = 5
-        smoothed = np.copy(cam_positions)
-        for ax in range(3):
-            kernel = np.ones(window) / window
-            smoothed[:, ax] = np.convolve(cam_positions[:, ax], kernel, mode="same")
-        cam_positions_smooth = smoothed
-    else:
-        cam_positions_smooth = cam_positions
+    cam_positions_smooth = _smooth_trajectory(cam_positions)
+    total_dist = _compute_distance(cam_positions_smooth)
 
-    total_dist = 0.0
-    if len(cam_positions_smooth) > 1:
-        total_dist = float(np.sum(np.linalg.norm(
-            np.diff(cam_positions_smooth, axis=0), axis=1
-        )))
-
+    print(f"\n3D Reconstruction Summary (FastVGGT):")
+    print(f"  Camera poses: {len(image_data)}")
+    print(f"  Point cloud: {len(points_xyz)} points")
     print(f"  Depth maps: {len(depth_map_cache)}")
-    print(f"  Worker distance: {total_dist:.1f}m")
+    print(f"  Worker distance: {total_dist:.1f} (relative units)")
 
     return {
         "intrinsics": intrinsics,
         "image_data": image_data,
         "points_xyz": points_xyz,
         "points_rgb": points_rgb,
-        "img_to_points3d": {},  # not needed without COLMAP tracks
+        "img_to_points3d": {},
         "depth_map_cache": depth_map_cache,
         "cam_positions": cam_positions,
         "cam_positions_smooth": cam_positions_smooth,
         "total_distance": total_dist,
         "colmap_dir": recon_dir,
     }
+
+
+def _smooth_trajectory(cam_positions):
+    if len(cam_positions) > 10:
+        window = 5
+        smoothed = np.copy(cam_positions)
+        for ax in range(3):
+            kernel = np.ones(window) / window
+            smoothed[:, ax] = np.convolve(cam_positions[:, ax], kernel, mode="same")
+        return smoothed
+    return cam_positions
+
+
+def _compute_distance(cam_positions_smooth):
+    if len(cam_positions_smooth) > 1:
+        return float(np.sum(np.linalg.norm(
+            np.diff(cam_positions_smooth, axis=0), axis=1
+        )))
+    return 0.0

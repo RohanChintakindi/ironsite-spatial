@@ -45,6 +45,8 @@ def main():
                         help="FastVGGT token merging block (0=off, 6=fast)")
     parser.add_argument("--max-frames", type=int, default=None,
                         help="Max keyframes to extract (0=unlimited)")
+    parser.add_argument("--backend", default="vggtx", choices=["vggtx", "fastvggt"],
+                        help="3D backend: vggtx (metric depth, slower) or fastvggt (relative, faster)")
     parser.add_argument("--force", action="store_true",
                         help="Force re-run all steps (ignore cached results)")
     args = parser.parse_args()
@@ -166,13 +168,14 @@ def main():
         print(f"  Completed in {time.time() - t0:.1f}s")
 
     # ==========================================
-    # Step 3: FastVGGT (3D Reconstruction)
+    # Step 3: 3D Reconstruction
     # ==========================================
     print("\n" + "=" * 60)
-    print("STEP 3: FastVGGT — 3D Reconstruction + Depth + Trajectory")
+    backend_name = "VGGT-X (Global Alignment)" if args.backend == "vggtx" else "FastVGGT"
+    print(f"STEP 3: {backend_name} — 3D Reconstruction + Depth + Trajectory")
     print("=" * 60)
 
-    recon_cache = os.path.join(cache_dir, "recon.pkl")
+    recon_cache = os.path.join(cache_dir, f"recon_{args.backend}.pkl")
 
     if not args.force and os.path.exists(recon_cache):
         print("  SKIPPED — 3D reconstruction already cached")
@@ -189,6 +192,10 @@ def main():
             depth_conf_thresh=FASTVGGT_DEPTH_CONF,
             max_points=FASTVGGT_MAX_POINTS,
             num_keyframes=len(keyframes),
+            backend=args.backend,
+            chunk_size=VGGTX_CHUNK_SIZE,
+            max_query_pts=VGGTX_MAX_QUERY_PTS,
+            vggtx_max_points=VGGTX_MAX_POINTS,
         )
         with open(recon_cache, "wb") as f:
             pickle.dump(recon_data, f)
@@ -219,14 +226,14 @@ def main():
     memory.ingest(scene_graphs, args.video)
     memory.save()
 
-    # Demo queries (thresholds in relative depth units, not meters)
+    # Demo queries
     print("\nSample queries:")
     blocks = memory.query_label("block")
     print(f"  Frames with blocks: {len(blocks)}")
-    close = memory.query_depth_range(0.05, 0.5)
-    print(f"  Objects in work range: {len(close)} frames")
-    placements = memory.query_proximity("worker", "concrete block", max_m=0.2)
-    print(f"  Worker near block: {len(placements)} frames")
+    close = memory.query_depth_range(0.5, 3.0)
+    print(f"  Objects in work range (0.5-3m): {len(close)} frames")
+    placements = memory.query_proximity("worker", "concrete block", max_m=2.0)
+    print(f"  Worker near block (<2m): {len(placements)} frames")
 
     # ==========================================
     # Step 6: VLM Reasoning

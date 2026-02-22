@@ -24,6 +24,14 @@ else
     echo "Grounded-SAM-2 already installed"
 fi
 
+echo "=== Installing VGGT-X (metric depth via global alignment) ==="
+if [ ! -d "VGGT-X" ]; then
+    git clone --recursive https://github.com/Linketic/VGGT-X.git
+    pip install -q -r VGGT-X/requirements.txt
+else
+    echo "VGGT-X already installed"
+fi
+
 echo "=== Installing FastVGGT ==="
 if [ ! -d "FastVGGT" ]; then
     git clone https://github.com/mystorm16/FastVGGT.git

@@ -40,19 +40,22 @@ for _analytic, _fine_labels in ANALYTIC_TAXONOMY.items():
     for _fl in _fine_labels:
         LABEL_TO_ANALYTIC[_fl.lower()] = _analytic
 
-# --- FastVGGT ---
+# --- VGGT-X (metric depth via global alignment) ---
+VGGTX_CHUNK_SIZE = 256      # frames per VGGT-X chunk (reduce to 128 if OOM)
+VGGTX_MAX_QUERY_PTS = 2048  # XFeat feature matching points
+VGGTX_MAX_POINTS = 500000   # max points in COLMAP cloud
+
+# --- FastVGGT (relative depth, faster) ---
 FASTVGGT_MERGING = 6       # token merging at block 6 (recommended — ~4x speedup)
 FASTVGGT_MERGE_RATIO = 0.9 # how aggressively to merge tokens (0.9 = 4x speedup)
 FASTVGGT_DEPTH_CONF = 3.0  # depth confidence threshold
 FASTVGGT_MAX_POINTS = 100000
 
 # --- Scene Graph ---
-# Note: FastVGGT outputs relative depth (0-1.2 range), not metric.
-# Thresholds are in relative units, not meters.
-NEAR_THRESHOLD = 0.1   # ~1m real-world
-FAR_THRESHOLD = 0.3    # ~3m real-world
+NEAR_THRESHOLD = 1.0  # meters (VGGT-X gives metric depth)
+FAR_THRESHOLD = 3.0
 HAND_OVERLAP_THRESHOLD = 0.2
-HAND_DEPTH_THRESHOLD = 0.05
+HAND_DEPTH_THRESHOLD = 0.5
 DIRECTION_THRESHOLD_X = 50  # pixels
 DIRECTION_THRESHOLD_Y = 30
 
