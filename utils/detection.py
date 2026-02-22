@@ -1,16 +1,17 @@
 """
 Grounded SAM 2: Object detection + segmentation + tracking.
-Single-pass tracking — no chunking (H200 has enough VRAM).
+Chunks frames into temp directories so SAM2 only loads chunk_size frames at a time.
 """
 
 import sys
 import os
+import shutil
 import torch
 import numpy as np
 
 sys.path.insert(0, "Grounded-SAM-2")
 
-from config import GDINO_MODEL_ID, REDETECT_EVERY, LABEL_TO_ANALYTIC
+from config import GDINO_MODEL_ID, REDETECT_EVERY, LABEL_TO_ANALYTIC, TRACK_CHUNK_SIZE
 
 
 def normalize_label(label):
@@ -50,76 +51,93 @@ def run_grounded_sam2(keyframes, frames_dir, device, text_prompt, threshold,
     image_predictor = SAM2ImagePredictor(sam2_model)
     print("Grounded SAM 2 models loaded!")
 
-    # Detect on first frame
-    boxes, labels, scores = detect_frame(
-        keyframes[0], gd_processor, gd_model, text_prompt, threshold, device
-    )
-    labels = [normalize_label(l) for l in labels]
-    print(f"First frame: {len(boxes)} detections")
-    for label, score in zip(labels, scores):
-        print(f"  {label}: {score:.2f}")
-
-    # Segment first frame
-    image_predictor.set_image(keyframes[0])
-    masks, _, _ = image_predictor.predict(
-        point_coords=None, point_labels=None,
-        box=torch.tensor(boxes, device=device),
-        multimask_output=False,
-    )
-    print(f"Generated {masks.shape[0]} masks")
+    # Get sorted frame filenames
+    all_frame_files = sorted([f for f in os.listdir(frames_dir) if f.endswith(".jpg")])
+    num_frames = len(all_frame_files)
 
     # Track object labels globally
     object_labels = {}
-    for obj_idx in range(len(boxes)):
-        object_labels[obj_idx + 1] = labels[obj_idx]
+    video_segments = {}  # frame_idx -> {obj_id: mask}
 
-    # --- Single-pass tracking (no chunking) ---
-    num_frames = len(keyframes)
-    print(f"Tracking {num_frames} frames in single pass...")
+    # --- Chunked tracking with temp directories ---
+    chunk_size = TRACK_CHUNK_SIZE
+    num_chunks = (num_frames + chunk_size - 1) // chunk_size
+    print(f"Tracking {num_frames} frames in {num_chunks} chunks of {chunk_size}...")
 
-    video_predictor = build_sam2_video_predictor(sam2_config, sam2_checkpoint, device=device)
-    inference_state = video_predictor.init_state(video_path=frames_dir)
+    for chunk_idx in range(num_chunks):
+        chunk_start = chunk_idx * chunk_size
+        chunk_end = min(chunk_start + chunk_size, num_frames)
+        chunk_files = all_frame_files[chunk_start:chunk_end]
+        chunk_len = len(chunk_files)
+        print(f"  Chunk {chunk_idx + 1}/{num_chunks}: frames {chunk_start}-{chunk_end - 1} ({chunk_len} frames)")
 
-    # Register first-frame detections
-    for obj_idx in range(len(boxes)):
-        obj_id = obj_idx + 1
-        video_predictor.add_new_points_or_box(
-            inference_state=inference_state,
-            frame_idx=0, obj_id=obj_id, box=boxes[obj_idx],
+        # Create temp directory with ONLY this chunk's frames (renamed 000000.jpg, 000001.jpg, ...)
+        tmp_dir = os.path.join(os.path.dirname(frames_dir), f"_chunk_tmp_{chunk_idx}")
+        os.makedirs(tmp_dir, exist_ok=True)
+        for local_idx, fname in enumerate(chunk_files):
+            src = os.path.join(frames_dir, fname)
+            dst = os.path.join(tmp_dir, f"{local_idx:06d}.jpg")
+            os.symlink(src, dst)
+
+        # Build video predictor for this chunk (only loads chunk_len frames)
+        video_predictor = build_sam2_video_predictor(sam2_config, sam2_checkpoint, device=device)
+        inference_state = video_predictor.init_state(video_path=tmp_dir)
+
+        # Detect on the first frame of this chunk
+        chunk_boxes, chunk_labels, chunk_scores = detect_frame(
+            keyframes[chunk_start], gd_processor, gd_model, text_prompt, threshold, device
         )
+        chunk_labels = [normalize_label(l) for l in chunk_labels]
 
-    # Re-detect periodically to catch new objects
-    for re_idx in range(redetect_every, num_frames, redetect_every):
-        new_boxes, new_labels, _ = detect_frame(
-            keyframes[re_idx], gd_processor, gd_model, text_prompt, threshold, device
-        )
-        new_labels = [normalize_label(l) for l in new_labels]
-        next_id = max(object_labels.keys()) + 1
-        for nb, nl in zip(new_boxes, new_labels):
-            object_labels[next_id] = nl
+        if chunk_idx == 0:
+            print(f"    First frame: {len(chunk_boxes)} detections")
+            for label, score in zip(chunk_labels, chunk_scores):
+                print(f"      {label}: {score:.2f}")
+
+        # Register detections on first frame of chunk (local frame_idx=0)
+        next_obj_id = max(object_labels.keys()) + 1 if object_labels else 1
+        for obj_idx in range(len(chunk_boxes)):
+            obj_id = next_obj_id + obj_idx
+            object_labels[obj_id] = chunk_labels[obj_idx]
             video_predictor.add_new_points_or_box(
                 inference_state=inference_state,
-                frame_idx=re_idx, obj_id=next_id, box=nb,
+                frame_idx=0, obj_id=obj_id, box=chunk_boxes[obj_idx],
             )
-            next_id += 1
 
-    # Propagate tracking across all frames
-    video_segments = {}
-    for out_frame_idx, out_obj_ids, out_mask_logits in video_predictor.propagate_in_video(inference_state):
-        video_segments[out_frame_idx] = {}
-        for i, out_obj_id in enumerate(out_obj_ids):
-            mask = (out_mask_logits[i] > 0.0).cpu().numpy().squeeze()
-            video_segments[out_frame_idx][out_obj_id] = mask
+        # Re-detect within chunk at intervals
+        for global_re_idx in range(chunk_start + redetect_every, chunk_end, redetect_every):
+            local_re_idx = global_re_idx - chunk_start
+            new_boxes, new_labels, _ = detect_frame(
+                keyframes[global_re_idx], gd_processor, gd_model, text_prompt, threshold, device
+            )
+            new_labels = [normalize_label(l) for l in new_labels]
+            re_next_id = max(object_labels.keys()) + 1
+            for nb, nl in zip(new_boxes, new_labels):
+                object_labels[re_next_id] = nl
+                video_predictor.add_new_points_or_box(
+                    inference_state=inference_state,
+                    frame_idx=local_re_idx, obj_id=re_next_id, box=nb,
+                )
+                re_next_id += 1
 
-    # Free tracker
-    del video_predictor, inference_state
-    torch.cuda.empty_cache()
+        # Propagate tracking (only runs through chunk_len frames)
+        for local_frame_idx, out_obj_ids, out_mask_logits in video_predictor.propagate_in_video(inference_state):
+            global_frame_idx = chunk_start + local_frame_idx
+            video_segments[global_frame_idx] = {}
+            for i, out_obj_id in enumerate(out_obj_ids):
+                mask = (out_mask_logits[i] > 0.0).cpu().numpy().squeeze()
+                video_segments[global_frame_idx][out_obj_id] = mask
+
+        # Cleanup
+        del video_predictor, inference_state
+        torch.cuda.empty_cache()
+        shutil.rmtree(tmp_dir)
 
     print(f"Tracked {len(object_labels)} unique objects across {len(video_segments)} frames")
 
     # Build per-frame detection list
     all_detections = []
-    for i in range(len(keyframes)):
+    for i in range(num_frames):
         frame_dets = []
         if i in video_segments:
             for obj_id, mask in video_segments[i].items():

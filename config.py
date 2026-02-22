@@ -21,6 +21,7 @@ TEXT_PROMPT = (
 )
 DETECTION_THRESHOLD = 0.25
 REDETECT_EVERY = 50
+TRACK_CHUNK_SIZE = 500  # frames per SAM2 tracking chunk
 
 # SAM2 model config
 SAM2_CHECKPOINT = "Grounded-SAM-2/checkpoints/sam2.1_hiera_small.pt"
