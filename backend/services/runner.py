@@ -40,9 +40,15 @@ def _ensure_project_on_path() -> str:
 
 
 def _get_cache_dir(config: dict) -> str:
-    """Return the cache directory for this video, creating it if needed."""
+    """Return a cache directory unique to this video file.
+
+    The video filename is its content hash (set during upload), so we use
+    that as the cache key.  This prevents different videos from sharing
+    stale cached results.
+    """
     video_path = config["video_path"]
-    output_dir = os.path.join(os.path.dirname(video_path), "output")
+    video_key = os.path.splitext(os.path.basename(video_path))[0]  # e.g. "a1b2c3d4e5f6"
+    output_dir = os.path.join(os.path.dirname(video_path), "output", video_key)
     cache_dir = os.path.join(output_dir, ".cache")
     os.makedirs(cache_dir, exist_ok=True)
     return cache_dir
@@ -80,7 +86,9 @@ def _step_preprocess(config: dict, data: dict) -> dict:
     interval = config.get("keyframe_interval", 10)
     max_frames = config.get("max_frames", 0)
 
-    output_dir = os.path.join(os.path.dirname(video_path), "output")
+    # Per-video output directory (keyed by content hash in filename)
+    video_key = os.path.splitext(os.path.basename(video_path))[0]
+    output_dir = os.path.join(os.path.dirname(video_path), "output", video_key)
     scene_dir = os.path.join(output_dir, "scene")
     frames_dir = os.path.join(scene_dir, "images")
     os.makedirs(frames_dir, exist_ok=True)
