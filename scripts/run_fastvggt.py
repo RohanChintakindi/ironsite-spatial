@@ -77,7 +77,7 @@ def run_inference(model, vgg_input, device="cuda"):
     hb = threading.Thread(target=heartbeat, daemon=True)
     hb.start()
 
-    with torch.no_grad(), torch.cuda.amp.autocast(dtype=torch.bfloat16):
+    with torch.no_grad(), torch.amp.autocast("cuda", dtype=torch.bfloat16):
         predictions = model(images_batch)
 
     done.set()
@@ -88,43 +88,34 @@ def run_inference(model, vgg_input, device="cuda"):
     return predictions
 
 
-def save_depth_maps(predictions, image_paths, output_dir, conf_thresh=3.0):
-    """Extract and save per-frame depth maps as .npy files."""
+def save_depth_maps(depth_np, depth_conf, image_paths, output_dir, conf_thresh=3.0):
+    """Save per-frame depth maps as .npy files."""
     depth_dir = os.path.join(output_dir, "estimated_depths")
     os.makedirs(depth_dir, exist_ok=True)
 
-    depth_tensor = predictions["depth"]  # (1, N, H, W)
-    depth_np = depth_tensor[0].detach().float().cpu().numpy()  # (N, H, W)
-
     # Confidence filtering
-    if "depth_conf" in predictions:
-        conf = predictions["depth_conf"][0].detach().float().cpu().numpy()
-        mask = conf < conf_thresh
-        depth_np_filtered = depth_np.copy()
-        depth_np_filtered[mask] = np.nan
+    if depth_conf is not None:
+        mask = depth_conf < conf_thresh
+        depth_filtered = depth_np.copy()
+        depth_filtered[mask] = np.nan
     else:
-        depth_np_filtered = depth_np
+        depth_filtered = depth_np
 
     for i, img_path in enumerate(image_paths):
         stem = Path(img_path).stem
         out_path = os.path.join(depth_dir, f"{stem}_depth.npy")
-        np.save(out_path, depth_np_filtered[i])
+        np.save(out_path, depth_filtered[i])
 
     print(f"Saved {len(image_paths)} depth maps to {depth_dir}")
-    return depth_np_filtered
+    return depth_filtered
 
 
-def save_colmap(predictions, image_paths, images_np, output_dir, max_points=100000):
-    """Export COLMAP reconstruction from FastVGGT predictions."""
+def save_colmap(extrinsics, intrinsics, depth, image_paths, images_np, output_dir, max_points=100000):
+    """Export COLMAP reconstruction from decoded FastVGGT predictions."""
     import pycolmap
 
     sparse_dir = Path(output_dir) / "sparse" / "0"
     sparse_dir.mkdir(parents=True, exist_ok=True)
-
-    # Extract poses and intrinsics
-    extrinsics = predictions["extrinsic"][0].detach().float().cpu().numpy()  # (N, 4, 4)
-    intrinsics = predictions["intrinsic"][0].detach().float().cpu().numpy()  # (N, 3, 3)
-    depth = predictions["depth"][0].detach().float().cpu().numpy()  # (N, H, W)
 
     N, H_d, W_d = depth.shape
     H_img, W_img = images_np.shape[1], images_np.shape[2]
@@ -313,11 +304,26 @@ def main():
     # Run inference
     predictions = run_inference(model, vgg_input)
 
+    # Decode pose encoding into extrinsic/intrinsic matrices
+    from vggt.utils.pose_enc import pose_encoding_to_extri_intri
+    img_h, img_w = vgg_input.shape[2], vgg_input.shape[3]
+    extrinsics, intrinsics = pose_encoding_to_extri_intri(
+        predictions["pose_enc"], (img_h, img_w)
+    )
+    # (1, N, 4, 4) and (1, N, 3, 3)
+    extrinsics_np = extrinsics[0].detach().float().cpu().numpy()
+    intrinsics_np = intrinsics[0].detach().float().cpu().numpy()
+    depth_np = predictions["depth"][0].detach().float().cpu().numpy()
+    depth_conf = predictions.get("depth_conf")
+    if depth_conf is not None:
+        depth_conf = depth_conf[0].detach().float().cpu().numpy()
+
     # Save depth maps
-    save_depth_maps(predictions, image_paths, args.output_dir, args.depth_conf_thresh)
+    save_depth_maps(depth_np, depth_conf, image_paths, args.output_dir, args.depth_conf_thresh)
 
     # Save COLMAP reconstruction
-    save_colmap(predictions, image_paths, images_np, args.output_dir, args.max_points)
+    save_colmap(extrinsics_np, intrinsics_np, depth_np, image_paths, images_np,
+                args.output_dir, args.max_points)
 
     # Free GPU
     del model, predictions
