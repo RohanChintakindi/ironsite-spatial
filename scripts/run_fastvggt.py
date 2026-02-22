@@ -32,8 +32,22 @@ def load_images(image_dir, max_size=1024):
         img = Image.open(p).convert("RGB")
         images.append(np.array(img))
 
-    # Stack and normalize to [0, 1]
     images_np = np.stack(images)  # (N, H, W, 3)
+    N, H, W, C = images_np.shape
+
+    # Resize to nearest multiple of 14 (DINOv2 patch size requirement)
+    patch_size = 14
+    H_new = (H // patch_size) * patch_size
+    W_new = (W // patch_size) * patch_size
+    if H_new != H or W_new != W:
+        print(f"Resizing frames: {W}x{H} -> {W_new}x{H_new} (patch size {patch_size})")
+        import cv2
+        resized = []
+        for img in images_np:
+            resized.append(cv2.resize(img, (W_new, H_new), interpolation=cv2.INTER_LINEAR))
+        images_np = np.stack(resized)
+
+    # Normalize to [0, 1]
     images_tensor = torch.from_numpy(images_np).float() / 255.0
     images_tensor = images_tensor.permute(0, 3, 1, 2)  # (N, 3, H, W)
 
