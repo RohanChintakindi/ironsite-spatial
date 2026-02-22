@@ -158,6 +158,9 @@ def save_colmap(extrinsics, intrinsics, depth, image_paths, images_np, output_di
             pycolmap.Rotation3d(R), t
         )
         reconstruction.add_image(img)
+        reconstruction.register_image(i + 1)  # must register for poses to persist
+
+    print(f"Registered {reconstruction.num_reg_images()} images")
 
     # Unproject depth to 3D points
     print("Unprojecting depth to 3D points...")
