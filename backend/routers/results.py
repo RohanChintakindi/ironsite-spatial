@@ -400,7 +400,8 @@ async def get_vlm_analysis(run_id: str, request: Request):
     if vlm is None:
         return {"skipped": True, "analysis": {}}
 
-    return {"skipped": False, "analysis": vlm}
+    skipped = data.get("vlm_skipped", vlm is None)
+    return {"skipped": skipped, "analysis": vlm}
 
 
 # ------------------------------------------------------------------

@@ -5,6 +5,7 @@ import Hero from './components/chapters/Hero'
 import Preprocessing from './components/chapters/Preprocessing'
 import Detection from './components/chapters/Detection'
 import Reconstruction from './components/chapters/Reconstruction'
+import FrameExplorer from './components/chapters/FrameExplorer'
 import SceneGraphs from './components/chapters/SceneGraphs'
 import SpatialGraphChapter from './components/chapters/SpatialGraphChapter'
 import Events from './components/chapters/Events'
@@ -28,6 +29,7 @@ export default function App() {
         <Preprocessing />
         <Detection />
         <Reconstruction />
+        <FrameExplorer />
         <SceneGraphs />
         <SpatialGraphChapter />
         <Events />
