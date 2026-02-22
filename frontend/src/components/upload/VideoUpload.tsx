@@ -1,7 +1,7 @@
 import { useState, useCallback, useRef } from 'react'
 import { Upload, Play, Settings, Film } from 'lucide-react'
 import clsx from 'clsx'
-import { startPipeline } from '../../api/client'
+import { startPipeline, uploadVideo } from '../../api/client'
 import { usePipelineStore } from '../../store/pipeline'
 
 export default function VideoUpload() {
@@ -24,18 +24,8 @@ export default function VideoUpload() {
     setError('')
     setFileName(file.name)
     try {
-      const formData = new FormData()
-      formData.append('file', file)
-      const res = await fetch('/api/pipeline/upload', {
-        method: 'POST',
-        body: formData,
-      })
-      if (!res.ok) {
-        const text = await res.text()
-        throw new Error(`Upload failed: ${text}`)
-      }
-      const { video_path } = await res.json()
-      setVideoPath(video_path)
+      const result = await uploadVideo(file)
+      setVideoPath(result.video_path)
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Upload failed')
       setFileName('')

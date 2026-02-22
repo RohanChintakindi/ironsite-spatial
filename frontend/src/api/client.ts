@@ -13,6 +13,20 @@ async function request<T>(path: string, opts?: RequestInit): Promise<T> {
   return res.json()
 }
 
+export async function uploadVideo(file: File): Promise<{ video_path: string; filename: string; size_mb: number }> {
+  const formData = new FormData()
+  formData.append('file', file)
+  const res = await fetch(`${BASE}/pipeline/upload`, {
+    method: 'POST',
+    body: formData,
+  })
+  if (!res.ok) {
+    const text = await res.text()
+    throw new Error(`Upload failed: ${text}`)
+  }
+  return res.json()
+}
+
 export async function startPipeline(config: {
   video_path: string
   backend: string
