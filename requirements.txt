@@ -1,0 +1,13 @@
+torch
+torchvision
+torchaudio
+transformers
+supervision
+opencv-python-headless
+numpy
+plotly
+matplotlib
+huggingface_hub
+openai
+scipy
+Pillow
