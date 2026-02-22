@@ -60,7 +60,7 @@ DIRECTION_THRESHOLD_X = 50  # pixels
 DIRECTION_THRESHOLD_Y = 30
 
 # --- VLM Reasoning ---
-GROK_MODEL = "grok-3-fast"
+GROK_MODEL = "grok-4-1-fast-non-reasoning"  # vision + cheapest ($0.05/M in, $0.50/M out)
 GROK_BASE_URL = "https://api.x.ai/v1"
 VLM_NUM_SAMPLES = 30
 VLM_TEMPERATURE = 0.3

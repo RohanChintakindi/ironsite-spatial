@@ -172,17 +172,34 @@ def run_vlm_analysis(scene_graphs, video_path, api_key, model="grok-3-fast",
     content_parts.append({"type": "text", "text": text_prompt})
 
     estimated_tokens = len(context_str) // 4
-    print(f"  Sending {context_type} context to {model} (~{estimated_tokens} text tokens)")
+    has_images = any(p.get("type") == "image_url" for p in content_parts)
+    print(f"  Sending {context_type} context to {model} (~{estimated_tokens} text tokens, images={has_images})")
 
-    response = client.chat.completions.create(
-        model=model,
-        messages=[
-            {"role": "system", "content": SYSTEM_PROMPT},
-            {"role": "user", "content": content_parts},
-        ],
-        temperature=temperature,
-        max_tokens=max_tokens,
-    )
+    try:
+        response = client.chat.completions.create(
+            model=model,
+            messages=[
+                {"role": "system", "content": SYSTEM_PROMPT},
+                {"role": "user", "content": content_parts},
+            ],
+            temperature=temperature,
+            max_tokens=max_tokens,
+        )
+    except Exception as e:
+        if has_images:
+            print(f"  Image request failed ({e}), retrying text-only...")
+            text_only = [p for p in content_parts if p.get("type") == "text"]
+            response = client.chat.completions.create(
+                model=model,
+                messages=[
+                    {"role": "system", "content": SYSTEM_PROMPT},
+                    {"role": "user", "content": text_only},
+                ],
+                temperature=temperature,
+                max_tokens=max_tokens,
+            )
+        else:
+            raise
 
     result = response.choices[0].message.content
     print("\n" + "=" * 60)
