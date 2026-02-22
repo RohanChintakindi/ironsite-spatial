@@ -40,13 +40,11 @@ for _analytic, _fine_labels in ANALYTIC_TAXONOMY.items():
     for _fl in _fine_labels:
         LABEL_TO_ANALYTIC[_fl.lower()] = _analytic
 
-# --- VGGT-X ---
-VGGTX_DIR = "VGGT-X"
-VGGTX_CHUNK_SIZE = 512   # reduce to 128-256 if OOM
-VGGTX_MAX_QUERY_PTS = 2048
-VGGTX_SHARED_CAMERA = True
-VGGTX_USE_GA = True       # global alignment — consistent world coords
-VGGTX_SAVE_DEPTH = True
+# --- FastVGGT ---
+FASTVGGT_MERGING = 6       # token merging block (0=off, 6=recommended for speed)
+FASTVGGT_MERGE_RATIO = 0.9 # how aggressively to merge tokens (0.9 = 4x speedup)
+FASTVGGT_DEPTH_CONF = 3.0  # depth confidence threshold
+FASTVGGT_MAX_POINTS = 100000
 
 # --- Scene Graph ---
 NEAR_THRESHOLD = 1.0  # meters

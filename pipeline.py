@@ -41,8 +41,8 @@ def main():
     parser.add_argument("--output", default="output", help="Output directory")
     parser.add_argument("--skip-vlm", action="store_true", help="Skip VLM reasoning step")
     parser.add_argument("--keyframe-interval", type=int, default=None)
-    parser.add_argument("--chunk-size", type=int, default=None,
-                        help=f"VGGT-X chunk size (default: {VGGTX_CHUNK_SIZE})")
+    parser.add_argument("--merging", type=int, default=None,
+                        help="FastVGGT token merging block (0=off, 6=fast)")
     parser.add_argument("--max-frames", type=int, default=None,
                         help="Max keyframes to extract (0=unlimited)")
     parser.add_argument("--force", action="store_true",
@@ -63,7 +63,7 @@ def main():
 
     os.makedirs(args.output, exist_ok=True)
     kf_interval = args.keyframe_interval or KEYFRAME_INTERVAL
-    chunk_size = args.chunk_size or VGGTX_CHUNK_SIZE
+    merging = args.merging if args.merging is not None else FASTVGGT_MERGING
     max_frames = args.max_frames if args.max_frames is not None else MAX_FRAMES
 
     # Cache directory
@@ -166,10 +166,10 @@ def main():
         print(f"  Completed in {time.time() - t0:.1f}s")
 
     # ==========================================
-    # Step 3: VGGT-X (3D Reconstruction)
+    # Step 3: FastVGGT (3D Reconstruction)
     # ==========================================
     print("\n" + "=" * 60)
-    print("STEP 3: VGGT-X — 3D Reconstruction + Depth + Trajectory")
+    print("STEP 3: FastVGGT — 3D Reconstruction + Depth + Trajectory")
     print("=" * 60)
 
     recon_cache = os.path.join(cache_dir, "recon.pkl")
@@ -183,12 +183,11 @@ def main():
         t0 = time.time()
         recon_data = run_full_3d_pipeline(
             scene_dir=scene_dir,
-            vggtx_dir=VGGTX_DIR,
-            chunk_size=chunk_size,
-            max_query_pts=VGGTX_MAX_QUERY_PTS,
-            shared_camera=VGGTX_SHARED_CAMERA,
-            use_ga=VGGTX_USE_GA,
-            save_depth=VGGTX_SAVE_DEPTH,
+            output_dir=args.output,
+            merging=FASTVGGT_MERGING,
+            merge_ratio=FASTVGGT_MERGE_RATIO,
+            depth_conf_thresh=FASTVGGT_DEPTH_CONF,
+            max_points=FASTVGGT_MAX_POINTS,
             num_keyframes=len(keyframes),
         )
         with open(recon_cache, "wb") as f:

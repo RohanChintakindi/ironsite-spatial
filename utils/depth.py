@@ -1,6 +1,6 @@
 """
-VGGT-X: 3D reconstruction with global alignment.
-Runs VGGT-X CLI → parses COLMAP output with pycolmap → returns poses, depths, point cloud.
+3D reconstruction via FastVGGT.
+Runs FastVGGT → parses COLMAP output + depth maps → returns poses, depths, point cloud.
 """
 
 import subprocess
@@ -11,85 +11,57 @@ import pycolmap
 from pathlib import Path
 
 
-def run_vggtx(scene_dir, vggtx_dir="VGGT-X", chunk_size=512,
-              max_query_pts=2048, shared_camera=True, use_ga=True, save_depth=True):
-    """Run VGGT-X demo_colmap.py on the scene directory."""
+def run_fastvggt(scene_dir, output_dir, merging=6, merge_ratio=0.9,
+                 depth_conf_thresh=3.0, max_points=100000):
+    """Run FastVGGT reconstruction script."""
 
     cmd_parts = [
-        f"python {vggtx_dir}/demo_colmap.py",
-        f"--scene_dir {scene_dir}",
-        f"--chunk_size {chunk_size}",
-        f"--max_query_pts {max_query_pts}",
+        "python", "-u", "scripts/run_fastvggt.py",
+        f"--scene_dir", scene_dir,
+        f"--output_dir", output_dir,
+        f"--merging", str(merging),
+        f"--merge_ratio", str(merge_ratio),
+        f"--depth_conf_thresh", str(depth_conf_thresh),
+        f"--max_points", str(max_points),
     ]
-    if shared_camera:
-        cmd_parts.append("--shared_camera")
-    if use_ga:
-        cmd_parts.append("--use_ga")
-    if save_depth:
-        cmd_parts.append("--save_depth")
 
     cmd = " ".join(cmd_parts)
-    print(f"Running VGGT-X:\n  {cmd}\n")
+    print(f"Running FastVGGT:\n  {cmd}\n")
 
     t0 = time.time()
-    result = subprocess.run(cmd, shell=True, capture_output=True, text=True)
+    result = subprocess.run(cmd, shell=True)
 
-    if result.stdout:
-        # Print last 3000 chars of output
-        print(result.stdout[-3000:])
     if result.returncode != 0:
-        print(f"STDERR: {result.stderr[-3000:]}")
-        raise RuntimeError("VGGT-X failed! Check errors above.")
+        raise RuntimeError("FastVGGT failed! Check errors above.")
 
     elapsed = time.time() - t0
-    print(f"VGGT-X completed in {elapsed:.1f}s")
+    print(f"FastVGGT completed in {elapsed:.1f}s")
 
 
-def find_vggtx_output(scene_dir):
-    """Find the VGGT-X output directory (tries common naming patterns)."""
-    scene_name = Path(scene_dir).name
-    parent = Path(scene_dir).parent
-
+def find_colmap_output(output_dir):
+    """Find the COLMAP sparse reconstruction directory."""
     candidates = [
-        f"{scene_dir}_vggt_x/sparse/0",
-        f"{scene_dir}_vggt_x/sparse",
-        f"{parent}_vggt_x/{scene_name}/sparse/0",
-        f"{parent}_vggt_x/{scene_name}/sparse",
+        os.path.join(output_dir, "sparse", "0"),
+        os.path.join(output_dir, "sparse"),
     ]
 
     for c in candidates:
         if os.path.exists(os.path.join(c, "cameras.bin")):
             return c
 
-    # Search more broadly
-    for root, dirs, files in os.walk(str(parent)):
-        if "cameras.bin" in files and "vggt_x" in root:
-            return root
-
     raise FileNotFoundError(
-        f"Could not find VGGT-X COLMAP output. Searched:\n" +
+        f"Could not find COLMAP output in {output_dir}. Searched:\n" +
         "\n".join(f"  {c}" for c in candidates)
     )
 
 
-def find_depth_dir(scene_dir):
-    """Find the VGGT-X depth maps directory."""
-    scene_name = Path(scene_dir).name
-    parent = Path(scene_dir).parent
-
-    candidates = [
-        f"{scene_dir}_vggt_x/estimated_depths",
-        f"{scene_dir}_vggt_x/depth",
-        f"{parent}_vggt_x/{scene_name}/estimated_depths",
-        f"{parent}_vggt_x/{scene_name}/depth",
-    ]
-
-    for c in candidates:
-        if os.path.exists(c):
-            npy_files = [f for f in os.listdir(c) if f.endswith(".npy")]
-            if npy_files:
-                return c
-
+def find_depth_dir(output_dir):
+    """Find the depth maps directory."""
+    depth_dir = os.path.join(output_dir, "estimated_depths")
+    if os.path.exists(depth_dir):
+        npy_files = [f for f in os.listdir(depth_dir) if f.endswith(".npy")]
+        if npy_files:
+            return depth_dir
     return None
 
 
@@ -138,7 +110,7 @@ def parse_colmap(colmap_dir):
     points_xyz = np.array([pt.xyz for pt in reconstruction.points3D.values()])
     points_rgb = np.array([pt.color for pt in reconstruction.points3D.values()])
 
-    # Per-image 3D point lookup (which 3D points are visible in each image)
+    # Per-image 3D point lookup
     from collections import defaultdict
     img_to_points3d = defaultdict(list)
     for pt in reconstruction.points3D.values():
@@ -157,7 +129,7 @@ def parse_colmap(colmap_dir):
 
 
 def load_depth_maps(depth_dir, num_keyframes):
-    """Load VGGT-X depth maps (.npy files)."""
+    """Load depth maps (.npy files)."""
     if depth_dir is None:
         print("No depth directory found")
         return {}
@@ -171,7 +143,7 @@ def load_depth_maps(depth_dir, num_keyframes):
         if depth.ndim == 3:
             depth = depth[..., 0]
 
-        # Match depth file to image name (handle various naming patterns)
+        # Match depth file to image name
         img_name = (df
                     .replace("_depth.npy", ".jpg")
                     .replace(".npy", ".jpg"))
@@ -182,7 +154,7 @@ def load_depth_maps(depth_dir, num_keyframes):
 
 
 def get_depth_at_bbox(depth_map_cache, img_name, bbox, img_hw):
-    """Get depth at a bounding box using VGGT-X depth map."""
+    """Get depth at a bounding box using depth map."""
     x1, y1, x2, y2 = [int(v) for v in bbox]
 
     if img_name not in depth_map_cache:
@@ -199,34 +171,35 @@ def get_depth_at_bbox(depth_map_cache, img_name, bbox, img_hw):
     py2 = min(H_d - 1, int(y2 * sy))
 
     patch = dep[py1:py2, px1:px2].ravel()
+    # Filter NaN values (from confidence filtering)
+    patch = patch[np.isfinite(patch)]
     if len(patch) < 3:
         cy_d = int((y1 + y2) / 2 * sy)
         cx_d = int((x1 + x2) / 2 * sx)
         cy_d = min(cy_d, H_d - 1)
         cx_d = min(cx_d, W_d - 1)
-        return float(dep[cy_d, cx_d])
+        val = float(dep[cy_d, cx_d])
+        return val if np.isfinite(val) else 0.0
 
     # Outlier-filtered median
     med = np.median(patch)
-    std = patch.std()
+    std = np.nanstd(patch)
     inliers = patch[np.abs(patch - med) < std * 1.5 + 1e-6]
     return float(np.median(inliers)) if len(inliers) > 2 else float(med)
 
 
 def unproject_to_world(cx_px, cy_px, depth, intrinsics, extrinsics):
     """Unproject a 2D pixel + depth into COLMAP world coordinates."""
-    if depth <= 0:
+    if depth <= 0 or not np.isfinite(depth):
         return [0.0, 0.0, 0.0]
 
     fx, fy = intrinsics[0, 0], intrinsics[1, 1]
     ppx, ppy = intrinsics[0, 2], intrinsics[1, 2]
 
-    # Camera coordinates
     X_cam = (cx_px - ppx) * depth / fx
     Y_cam = (cy_px - ppy) * depth / fy
     Z_cam = depth
 
-    # World coordinates: X_world = R^T @ (X_cam - t)
     R = extrinsics[:3, :3]
     t = extrinsics[:3, 3]
     p_cam = np.array([X_cam, Y_cam, Z_cam])
@@ -235,25 +208,26 @@ def unproject_to_world(cx_px, cy_px, depth, intrinsics, extrinsics):
     return [round(float(v), 4) for v in p_world]
 
 
-def run_full_3d_pipeline(scene_dir, vggtx_dir, chunk_size, max_query_pts,
-                         shared_camera, use_ga, save_depth, num_keyframes):
-    """Run the full VGGT-X pipeline: reconstruct → parse → load depths."""
+def run_full_3d_pipeline(scene_dir, output_dir, merging=6, merge_ratio=0.9,
+                         depth_conf_thresh=3.0, max_points=100000, num_keyframes=0):
+    """Run the full FastVGGT pipeline: reconstruct → parse → load depths."""
+
+    recon_dir = os.path.join(output_dir, "recon")
 
     # Check if already computed
     try:
-        colmap_dir = find_vggtx_output(scene_dir)
-        print(f"Found existing VGGT-X output: {colmap_dir}")
+        colmap_dir = find_colmap_output(recon_dir)
+        print(f"Found existing reconstruction: {colmap_dir}")
     except FileNotFoundError:
-        # Run reconstruction
-        run_vggtx(scene_dir, vggtx_dir, chunk_size, max_query_pts,
-                  shared_camera, use_ga, save_depth)
-        colmap_dir = find_vggtx_output(scene_dir)
+        run_fastvggt(scene_dir, recon_dir, merging, merge_ratio,
+                     depth_conf_thresh, max_points)
+        colmap_dir = find_colmap_output(recon_dir)
 
     # Parse COLMAP
     intrinsics, image_data, points_xyz, points_rgb, img_to_points3d = parse_colmap(colmap_dir)
 
     # Load depth maps
-    depth_dir = find_depth_dir(scene_dir)
+    depth_dir = find_depth_dir(recon_dir)
     depth_map_cache = load_depth_maps(depth_dir, num_keyframes)
 
     # Build camera trajectory (smoothed)

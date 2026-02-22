@@ -11,6 +11,7 @@ pip install -q transformers supervision opencv-python-headless numpy plotly matp
 pip install -q huggingface_hub openai scipy Pillow
 pip install -q pycolmap
 pip install -q faiss-gpu 2>/dev/null || pip install -q faiss-cpu
+pip install -q einops safetensors trimesh
 
 echo "=== Installing Grounded SAM 2 ==="
 if [ ! -d "Grounded-SAM-2" ]; then
@@ -23,12 +24,27 @@ else
     echo "Grounded-SAM-2 already installed"
 fi
 
-echo "=== Installing VGGT-X ==="
-if [ ! -d "VGGT-X" ]; then
-    git clone --recursive https://github.com/Linketic/VGGT-X.git
-    pip install -q -r VGGT-X/requirements.txt
+echo "=== Installing FastVGGT ==="
+if [ ! -d "FastVGGT" ]; then
+    git clone https://github.com/mystorm16/FastVGGT.git
+    pip install -q -r FastVGGT/requirements.txt
 else
-    echo "VGGT-X already installed"
+    echo "FastVGGT already installed"
+fi
+
+echo "=== Downloading VGGT checkpoint ==="
+if [ ! -f "FastVGGT/model_tracker_fixed_e20.pt" ]; then
+    python -c "
+from huggingface_hub import hf_hub_download
+hf_hub_download(
+    repo_id='facebook/VGGT_tracker_fixed',
+    filename='model_tracker_fixed_e20.pt',
+    local_dir='FastVGGT',
+)
+print('Checkpoint downloaded!')
+"
+else
+    echo "VGGT checkpoint already exists"
 fi
 
 echo "=== GPU Check ==="
