@@ -313,10 +313,11 @@ def main():
     # (1, N, 4, 4) and (1, N, 3, 3)
     extrinsics_np = extrinsics[0].detach().float().cpu().numpy()
     intrinsics_np = intrinsics[0].detach().float().cpu().numpy()
-    depth_np = predictions["depth"][0].detach().float().cpu().numpy().squeeze(-1)  # (N,H,W,1) -> (N,H,W)
+    depth_np = np.squeeze(predictions["depth"][0].detach().float().cpu().numpy())  # -> (N,H,W)
     depth_conf = predictions.get("depth_conf")
     if depth_conf is not None:
-        depth_conf = depth_conf[0].detach().float().cpu().numpy().squeeze(-1)
+        depth_conf = np.squeeze(depth_conf[0].detach().float().cpu().numpy())
+    print(f"  Depth: {depth_np.shape}, Conf: {depth_conf.shape if depth_conf is not None else 'None'}")
 
     # Save depth maps
     save_depth_maps(depth_np, depth_conf, image_paths, args.output_dir, args.depth_conf_thresh)
