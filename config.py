@@ -3,7 +3,7 @@ Configuration for the Ironsite Spatial Awareness Pipeline.
 """
 
 # --- Video Preprocessing ---
-KEYFRAME_INTERVAL = 10  # Extract every Nth frame (10 = ~1.5s at 15fps)
+KEYFRAME_INTERVAL = 30  # Extract every Nth frame (30 = ~2s at 15fps, ~64 frames)
 MAX_FRAMES = 0          # 0 = no cap, otherwise limit keyframes
 
 # Fisheye undistortion parameters (estimated for body cam barrel distortion)
