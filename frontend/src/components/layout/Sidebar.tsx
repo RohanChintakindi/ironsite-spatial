@@ -2,9 +2,11 @@ import { usePipelineStore, STEP_ORDER, STEP_LABELS, type StepName } from '../../
 import {
   Video,
   ScanSearch,
+  Crosshair,
   Box,
   Network,
   Share2,
+  Activity,
   Brain,
   Sparkles,
 } from 'lucide-react'
@@ -14,10 +16,12 @@ import type { LucideIcon } from 'lucide-react'
 
 const STEP_ICONS: Record<StepName, LucideIcon> = {
   preprocess: Video,
-  detection: ScanSearch,
+  dino: ScanSearch,
+  tracking: Crosshair,
   reconstruction: Box,
   scene_graphs: Network,
   graph: Share2,
+  events: Activity,
   memory: Brain,
   vlm: Sparkles,
 }
@@ -29,7 +33,9 @@ export default function Sidebar() {
   if (pipelineStatus === 'idle') return null
 
   const scrollTo = (step: StepName) => {
-    const el = document.getElementById(`chapter-${step}`)
+    // tracking shares the same section as dino
+    const scrollId = step === 'tracking' ? 'chapter-dino' : `chapter-${step}`
+    const el = document.getElementById(scrollId)
     el?.scrollIntoView({ behavior: 'smooth', block: 'start' })
   }
 

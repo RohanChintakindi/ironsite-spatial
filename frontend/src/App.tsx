@@ -6,6 +6,7 @@ import Preprocessing from './components/chapters/Preprocessing'
 import Detection from './components/chapters/Detection'
 import Reconstruction from './components/chapters/Reconstruction'
 import SceneGraphs from './components/chapters/SceneGraphs'
+import Events from './components/chapters/Events'
 import SpatialMemory from './components/chapters/SpatialMemory'
 import Analytics from './components/chapters/Analytics'
 import Summary from './components/chapters/Summary'
@@ -25,6 +26,8 @@ export default function App() {
         <Preprocessing />
         <Detection />
         <Reconstruction />
+        <SceneGraphs />
+        <Events />
         <SpatialMemory />
         <Analytics />
         <Summary />

@@ -1,11 +1,17 @@
 """
 Pipeline orchestrator -- runs the full Ironsite Spatial pipeline in
 background threads and broadcasts progress over WebSocket.
+
+Supports pickle-based caching (matching the original pipeline.py cache
+format) so repeated runs with the same video skip completed steps.
 """
 
 import asyncio
+import glob
+import json
 import logging
 import os
+import pickle
 import sys
 import time
 import traceback
@@ -33,6 +39,33 @@ def _ensure_project_on_path() -> str:
     return project_root
 
 
+def _get_cache_dir(config: dict) -> str:
+    """Return the cache directory for this video, creating it if needed."""
+    video_path = config["video_path"]
+    output_dir = os.path.join(os.path.dirname(video_path), "output")
+    cache_dir = os.path.join(output_dir, ".cache")
+    os.makedirs(cache_dir, exist_ok=True)
+    return cache_dir
+
+
+def _load_cache(cache_path: str):
+    """Load a pickle cache file, return None if missing or corrupt."""
+    if not os.path.exists(cache_path):
+        return None
+    try:
+        with open(cache_path, "rb") as f:
+            return pickle.load(f)
+    except Exception as e:
+        logger.warning("Cache load failed for %s: %s", cache_path, e)
+        return None
+
+
+def _save_cache(cache_path: str, obj):
+    """Save object to pickle cache."""
+    with open(cache_path, "wb") as f:
+        pickle.dump(obj, f)
+
+
 # ---------------------------------------------------------------------------
 # Individual pipeline steps (all synchronous -- run inside the executor)
 # ---------------------------------------------------------------------------
@@ -47,21 +80,46 @@ def _step_preprocess(config: dict, data: dict) -> dict:
     interval = config.get("keyframe_interval", 10)
     max_frames = config.get("max_frames", 0)
 
-    # Create output / scene directories next to the video
     output_dir = os.path.join(os.path.dirname(video_path), "output")
     scene_dir = os.path.join(output_dir, "scene")
     frames_dir = os.path.join(scene_dir, "images")
     os.makedirs(frames_dir, exist_ok=True)
 
+    data["output_dir"] = output_dir
+    data["scene_dir"] = scene_dir
+    data["frames_dir"] = frames_dir
+
+    # Check cache
+    cache_dir = _get_cache_dir(config)
+    cache_path = os.path.join(cache_dir, "preprocess.pkl")
+    existing_frames = glob.glob(os.path.join(frames_dir, "*.jpg"))
+
+    cached = _load_cache(cache_path)
+    if cached and existing_frames:
+        logger.info("Preprocess: loaded from cache (%d keyframes)", len(cached["keyframes"]))
+        data["keyframes"] = cached["keyframes"]
+        data["timestamps"] = cached["timestamps"]
+        data["frame_indices"] = cached["frame_indices"]
+        data["fps"] = cached["fps"]
+        data["w"] = cached["w"]
+        data["h"] = cached["h"]
+        return {
+            "num_keyframes": len(cached["keyframes"]),
+            "fps": cached["fps"],
+            "resolution": f"{cached['w']}x{cached['h']}",
+            "cached": True,
+        }
+
     keyframes, timestamps, frame_indices, fps, w, h = extract_keyframes(
-        video_path,
-        frames_dir,
-        interval=interval,
-        k_scale=FISHEYE_K_SCALE,
-        D=FISHEYE_D,
-        balance=FISHEYE_BALANCE,
+        video_path, frames_dir, interval=interval,
+        k_scale=FISHEYE_K_SCALE, D=FISHEYE_D, balance=FISHEYE_BALANCE,
         max_frames=max_frames,
     )
+
+    _save_cache(cache_path, {
+        "keyframes": keyframes, "timestamps": timestamps,
+        "frame_indices": frame_indices, "fps": fps, "w": w, "h": h,
+    })
 
     data["keyframes"] = keyframes
     data["timestamps"] = timestamps
@@ -69,52 +127,106 @@ def _step_preprocess(config: dict, data: dict) -> dict:
     data["fps"] = fps
     data["w"] = w
     data["h"] = h
-    data["output_dir"] = output_dir
-    data["scene_dir"] = scene_dir
-    data["frames_dir"] = frames_dir
 
     return {
         "num_keyframes": len(keyframes),
         "fps": fps,
         "resolution": f"{w}x{h}",
-        "timestamps_range": [
-            round(timestamps[0], 2) if timestamps else 0,
-            round(timestamps[-1], 2) if timestamps else 0,
-        ],
+        "cached": False,
     }
 
 
-def _step_detection(config: dict, data: dict) -> dict:
-    """Step 2: Grounding DINO detection + SAM2 tracking."""
+def _step_dino(config: dict, data: dict) -> dict:
+    """Step 2a: Grounding DINO zero-shot object detection."""
     _ensure_project_on_path()
+
+    cache_dir = _get_cache_dir(config)
+    dino_cache = os.path.join(cache_dir, "dino.pkl")
+
+    dino_cached = _load_cache(dino_cache)
+    if dino_cached:
+        logger.info("DINO: loaded from cache (%d frames)", len(dino_cached))
+        data["dino_results"] = dino_cached
+        total_boxes = sum(len(r.get("boxes", [])) for r in dino_cached.values())
+        unique_labels = set()
+        for r in dino_cached.values():
+            unique_labels.update(r.get("labels", []))
+        return {
+            "frames_detected": len(dino_cached),
+            "total_boxes": total_boxes,
+            "unique_labels": sorted(unique_labels),
+            "cached": True,
+        }
+
     import torch
-    from config import (
-        TEXT_PROMPT, DETECTION_THRESHOLD, REDETECT_EVERY,
-        SAM2_CHECKPOINT, SAM2_CONFIG,
-    )
-    from utils.detection import run_dino_detections, run_sam2_tracking
+    from config import TEXT_PROMPT, DETECTION_THRESHOLD, REDETECT_EVERY
+    from utils.detection import run_dino_detections
 
     device = "cuda" if torch.cuda.is_available() else "cpu"
     keyframes = data["keyframes"]
-    frames_dir = data["frames_dir"]
 
     dino_results = run_dino_detections(
-        keyframes,
-        device,
+        keyframes, device,
         text_prompt=TEXT_PROMPT,
         threshold=DETECTION_THRESHOLD,
         redetect_every=REDETECT_EVERY,
     )
+    _save_cache(dino_cache, dino_results)
+
+    data["dino_results"] = dino_results
+
+    total_boxes = sum(len(r.get("boxes", [])) for r in dino_results.values())
+    unique_labels = set()
+    for r in dino_results.values():
+        unique_labels.update(r.get("labels", []))
+
+    return {
+        "frames_detected": len(dino_results),
+        "total_boxes": total_boxes,
+        "unique_labels": sorted(unique_labels),
+        "cached": False,
+    }
+
+
+def _step_tracking(config: dict, data: dict) -> dict:
+    """Step 2b: SAM2 video tracking across all frames."""
+    _ensure_project_on_path()
+
+    cache_dir = _get_cache_dir(config)
+    tracking_cache = os.path.join(cache_dir, "tracking.pkl")
+
+    tracking_cached = _load_cache(tracking_cache)
+    if tracking_cached:
+        logger.info("Tracking: loaded from cache")
+        data["all_detections"] = tracking_cached["all_detections"]
+        data["object_labels"] = tracking_cached["object_labels"]
+        total_dets = sum(len(d) for d in tracking_cached["all_detections"])
+        return {
+            "total_detections": total_dets,
+            "unique_objects": len(tracking_cached["object_labels"]),
+            "frames_tracked": len(tracking_cached["all_detections"]),
+            "cached": True,
+        }
+
+    import torch
+    from config import REDETECT_EVERY, SAM2_CHECKPOINT, SAM2_CONFIG
+    from utils.detection import run_sam2_tracking
+
+    device = "cuda" if torch.cuda.is_available() else "cpu"
+    keyframes = data["keyframes"]
+    frames_dir = data["frames_dir"]
+    dino_results = data["dino_results"]
 
     all_detections, object_labels = run_sam2_tracking(
-        keyframes,
-        frames_dir,
-        device,
-        dino_results,
+        keyframes, frames_dir, device, dino_results,
         redetect_every=REDETECT_EVERY,
         sam2_checkpoint=SAM2_CHECKPOINT,
         sam2_config=SAM2_CONFIG,
     )
+    _save_cache(tracking_cache, {
+        "all_detections": all_detections,
+        "object_labels": object_labels,
+    })
 
     data["all_detections"] = all_detections
     data["object_labels"] = object_labels
@@ -124,12 +236,31 @@ def _step_detection(config: dict, data: dict) -> dict:
         "total_detections": total_dets,
         "unique_objects": len(object_labels),
         "frames_tracked": len(all_detections),
+        "cached": False,
     }
 
 
 def _step_reconstruction(config: dict, data: dict) -> dict:
     """Step 3: 3D reconstruction via VGGT-X or FastVGGT."""
     _ensure_project_on_path()
+
+    backend = config.get("backend", "vggtx")
+    cache_dir = _get_cache_dir(config)
+    cache_path = os.path.join(cache_dir, f"recon_{backend}.pkl")
+
+    cached = _load_cache(cache_path)
+    if cached:
+        logger.info("Reconstruction: loaded from cache (%d points)", len(cached.get("points_xyz", [])))
+        data["recon_data"] = cached
+        return {
+            "backend": backend,
+            "num_poses": len(cached.get("image_data", {})),
+            "point_cloud_size": len(cached.get("points_xyz", [])),
+            "depth_maps": len(cached.get("depth_map_cache", {})),
+            "total_distance": round(cached.get("total_distance", 0), 2),
+            "cached": True,
+        }
+
     from config import (
         FASTVGGT_MERGING, FASTVGGT_MERGE_RATIO, FASTVGGT_DEPTH_CONF,
         FASTVGGT_MAX_POINTS, VGGTX_CHUNK_SIZE, VGGTX_MAX_QUERY_PTS,
@@ -137,24 +268,19 @@ def _step_reconstruction(config: dict, data: dict) -> dict:
     )
     from utils.depth import run_full_3d_pipeline
 
-    backend = config.get("backend", "vggtx")
     scene_dir = data["scene_dir"]
     output_dir = data["output_dir"]
     num_keyframes = len(data["keyframes"])
 
     recon_data = run_full_3d_pipeline(
-        scene_dir=scene_dir,
-        output_dir=output_dir,
-        merging=FASTVGGT_MERGING,
-        merge_ratio=FASTVGGT_MERGE_RATIO,
-        depth_conf_thresh=FASTVGGT_DEPTH_CONF,
-        max_points=FASTVGGT_MAX_POINTS,
-        num_keyframes=num_keyframes,
-        backend=backend,
-        chunk_size=VGGTX_CHUNK_SIZE,
-        max_query_pts=VGGTX_MAX_QUERY_PTS,
+        scene_dir=scene_dir, output_dir=output_dir,
+        merging=FASTVGGT_MERGING, merge_ratio=FASTVGGT_MERGE_RATIO,
+        depth_conf_thresh=FASTVGGT_DEPTH_CONF, max_points=FASTVGGT_MAX_POINTS,
+        num_keyframes=num_keyframes, backend=backend,
+        chunk_size=VGGTX_CHUNK_SIZE, max_query_pts=VGGTX_MAX_QUERY_PTS,
         vggtx_max_points=VGGTX_MAX_POINTS,
     )
+    _save_cache(cache_path, recon_data)
 
     data["recon_data"] = recon_data
 
@@ -164,6 +290,7 @@ def _step_reconstruction(config: dict, data: dict) -> dict:
         "point_cloud_size": len(recon_data.get("points_xyz", [])),
         "depth_maps": len(recon_data.get("depth_map_cache", {})),
         "total_distance": round(recon_data.get("total_distance", 0), 2),
+        "cached": False,
     }
 
 
@@ -208,7 +335,6 @@ def _step_graph(config: dict, data: dict) -> dict:
     spatial_graph.export_html(os.path.join(output_dir, "spatial_graph.html"))
     spatial_graph.save_json(os.path.join(output_dir, "graph_data.json"))
 
-    # Store for VLM and API
     data["spatial_graph"] = spatial_graph
     data["graph_data"] = spatial_graph.to_frontend_json()
 
@@ -230,8 +356,6 @@ def _step_events(config: dict, data: dict) -> dict:
     event_result = extract_events(data["scene_graphs"], cam_smooth)
     data["event_result"] = event_result
 
-    # Save to disk
-    import json
     output_dir = data["output_dir"]
     with open(os.path.join(output_dir, "events.json"), "w") as f:
         json.dump(event_result, f, indent=2, default=str)
@@ -268,15 +392,15 @@ def _step_memory(config: dict, data: dict) -> dict:
 
 
 def _step_vlm(config: dict, data: dict) -> dict:
-    """Step 6: VLM narrator (optional — summarizes events)."""
+    """Step 6: VLM narrator (optional -- summarizes events)."""
     grok_key = config.get("grok_key")
     skip_vlm = config.get("skip_vlm", True)
 
-    # Always populate vlm_analysis with event engine results
     event_result = data.get("event_result", {})
     data["vlm_analysis"] = {
         **(event_result.get("stats", {})),
         "activity_timeline": event_result.get("timeline", []),
+        "events": event_result.get("events", []),
         "safety": event_result.get("ppe_report", {}),
     }
 
@@ -321,7 +445,8 @@ def _step_vlm(config: dict, data: dict) -> dict:
 
 PIPELINE_STEPS = [
     ("preprocess", _step_preprocess),
-    ("detection", _step_detection),
+    ("dino", _step_dino),
+    ("tracking", _step_tracking),
     ("reconstruction", _step_reconstruction),
     ("scene_graphs", _step_scene_graphs),
     ("graph", _step_graph),
@@ -345,7 +470,7 @@ async def run_pipeline(
     progress via *ws_manager* after each step.
 
     Heavy work is offloaded to a ThreadPoolExecutor so the event loop
-    stays responsive.
+    stays responsive. Steps with cached results complete instantly.
     """
     loop = asyncio.get_event_loop()
 
@@ -407,7 +532,9 @@ async def run_pipeline(
                 "metadata": metadata,
             })
 
-            logger.info("Step '%s' completed in %.1fs", step_name, elapsed)
+            cached = metadata.get("cached", False)
+            logger.info("Step '%s' %s in %.1fs", step_name,
+                        "loaded from cache" if cached else "completed", elapsed)
 
         except Exception as exc:
             tb = traceback.format_exc()

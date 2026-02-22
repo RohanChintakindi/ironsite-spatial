@@ -53,6 +53,31 @@ export interface FrameDetections {
   objects: DetectionObject[]
 }
 
+export interface DinoDetectionData {
+  total_detections: number
+  unique_labels: string[]
+  frames_detected: number
+  frames: {
+    frame_index: number
+    timestamp: number
+    num_detections: number
+    objects: { label: string; bbox: number[]; confidence: number }[]
+  }[]
+}
+
+export interface RawDetectionData {
+  total_detections: number
+  unique_objects: number
+  unique_labels: string[]
+  frames_tracked: number
+  frames: {
+    frame_index: number
+    timestamp: number
+    num_detections: number
+    objects: { id: number; label: string; bbox: number[] }[]
+  }[]
+}
+
 export interface PreprocessData {
   num_keyframes: number
   fps: number
@@ -79,7 +104,7 @@ export interface SceneGraph {
   original_frame: number
   timestamp: number
   timestamp_str: string
-  camera_pose: { position: number[] }
+  camera_pose: { position: number[] } | null
   num_objects: number
   objects: DetectionObject[]
   spatial_relations: unknown[][]
@@ -117,6 +142,85 @@ export interface VlmAnalysis {
   summary?: Record<string, number>
   productivity?: Record<string, unknown>
   safety?: Record<string, unknown>
+}
+
+// --- Event Engine Types ---
+
+export interface TimelineSegment {
+  start: string
+  end: string
+  start_sec: number
+  end_sec: number
+  activity: 'production' | 'prep' | 'downtime' | 'standby'
+  duration_sec: number
+  num_frames: number
+}
+
+export interface PPEReport {
+  total_frames: number
+  vest_visible_pct: number
+  helmet_visible_pct: number
+  gloves_visible_pct: number
+  all_ppe_items: string[]
+  concerns: string[]
+}
+
+export interface PerformanceMetrics {
+  quantity: {
+    block_interactions: number
+    blocks_per_min_production: number
+    tool_pickups: number
+    tool_changes_per_min: number
+    idle_periods: number
+    idle_time_sec: number
+    relocations: number
+  }
+  efficiency: {
+    overall_score: number
+    production_score: number
+    movement_score: number
+    continuity_score: number
+  }
+  spatial: {
+    work_area_m2: number
+    distance_m: number
+    blocks_per_meter: number
+  }
+  time_analysis: {
+    production_sec: number
+    prep_sec: number
+    idle_sec: number
+    longest_production: { start: string; duration_sec: number } | null
+    longest_idle: { start: string; duration_sec: number } | null
+  }
+  suggestions: { category: string; severity: string; message: string }[]
+}
+
+export interface EventsData {
+  events: {
+    type: string
+    frame_index: number
+    timestamp: number
+    timestamp_str: string
+    description?: string
+    [key: string]: unknown
+  }[]
+  timeline: TimelineSegment[]
+  stats: {
+    total_time_sec: number
+    production_pct: number
+    prep_pct: number
+    downtime_pct: number
+    standby_pct: number
+    distance_traveled_m: number
+    tool_pickups: number
+    block_interactions: number
+    relocations: number
+    unique_objects_interacted: number
+    avg_objects_per_frame: number
+  }
+  ppe_report: PPEReport
+  performance: PerformanceMetrics
 }
 
 export const CLASS_COLORS: Record<string, string> = {

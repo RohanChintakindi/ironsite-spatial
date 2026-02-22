@@ -70,6 +70,43 @@ export function annotatedFrameUrl(runId: string, idx: number) {
   return `${BASE}/results/${runId}/frame/${idx}/annotated`
 }
 
+export function dinoFrameUrl(runId: string, idx: number) {
+  return `${BASE}/results/${runId}/frame/${idx}/dino`
+}
+
+export function detectedFrameUrl(runId: string, idx: number) {
+  return `${BASE}/results/${runId}/frame/${idx}/detected`
+}
+
+export async function getDinoDetections(runId: string) {
+  return request<{
+    total_detections: number
+    unique_labels: string[]
+    frames_detected: number
+    frames: {
+      frame_index: number
+      timestamp: number
+      num_detections: number
+      objects: { label: string; bbox: number[]; confidence: number }[]
+    }[]
+  }>(`/results/${runId}/dino-detections`)
+}
+
+export async function getRawDetections(runId: string) {
+  return request<{
+    total_detections: number
+    unique_objects: number
+    unique_labels: string[]
+    frames_tracked: number
+    frames: {
+      frame_index: number
+      timestamp: number
+      num_detections: number
+      objects: { id: number; label: string; bbox: number[] }[]
+    }[]
+  }>(`/results/${runId}/raw-detections`)
+}
+
 export function depthFrameUrl(runId: string, idx: number) {
   return `${BASE}/results/${runId}/frame/${idx}/depth`
 }
@@ -110,6 +147,14 @@ export async function getSceneGraphs(runId: string) {
 
 export async function getVlmAnalysis(runId: string) {
   return request<Record<string, unknown>>(`/results/${runId}/vlm`)
+}
+
+export async function getEvents(runId: string) {
+  return request<import('./types').EventsData>(`/results/${runId}/events`)
+}
+
+export async function getGraphData(runId: string) {
+  return request<{ nodes: unknown[]; edges: unknown[]; stats?: unknown }>(`/results/${runId}/graph`)
 }
 
 export async function getDashboardData(runId: string) {

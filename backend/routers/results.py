@@ -13,6 +13,7 @@ from fastapi.responses import JSONResponse, StreamingResponse
 from services.serializer import (
     annotated_frame_jpeg,
     dashboard_data_from_scene_graphs,
+    detection_frame_jpeg,
     depth_to_plasma_jpeg,
     frame_to_jpeg,
     pointcloud_to_binary,
@@ -130,6 +131,143 @@ async def get_depth_frame(run_id: str, idx: int, request: Request):
 
     jpeg_bytes = depth_to_plasma_jpeg(depth_map)
     return StreamingResponse(io.BytesIO(jpeg_bytes), media_type="image/jpeg")
+
+
+@router.get("/{run_id}/frame/{idx}/detected")
+async def get_detected_frame(run_id: str, idx: int, request: Request):
+    """Return keyframe with basic DINO detection boxes (available after detection step)."""
+    run = _get_run(run_id, request)
+    data = _get_data(run)
+
+    keyframes = data.get("keyframes")
+    all_detections = data.get("all_detections")
+    if keyframes is None:
+        raise HTTPException(status_code=409, detail="Preprocess step not completed")
+    if all_detections is None:
+        raise HTTPException(status_code=409, detail="Detection step not completed")
+    if idx < 0 or idx >= len(keyframes):
+        raise HTTPException(status_code=404, detail=f"Frame index {idx} out of range")
+
+    dets = all_detections[idx] if idx < len(all_detections) else []
+    jpeg_bytes = detection_frame_jpeg(keyframes[idx], dets)
+    return StreamingResponse(io.BytesIO(jpeg_bytes), media_type="image/jpeg")
+
+
+@router.get("/{run_id}/dino-detections")
+async def get_dino_detections(run_id: str, request: Request):
+    """Return Grounding DINO detection results (available after dino step)."""
+    run = _get_run(run_id, request)
+    data = _get_data(run)
+
+    dino_results = data.get("dino_results")
+    timestamps = data.get("timestamps", [])
+    if dino_results is None:
+        raise HTTPException(status_code=409, detail="DINO step not completed")
+
+    frames = []
+    for frame_idx, result in sorted(dino_results.items()):
+        ts = timestamps[frame_idx] if frame_idx < len(timestamps) else 0
+        boxes = result.get("boxes", [])
+        labels = result.get("labels", [])
+        scores = result.get("scores", [])
+        frames.append({
+            "frame_index": frame_idx,
+            "timestamp": round(ts, 2),
+            "num_detections": len(boxes),
+            "objects": [
+                {
+                    "label": labels[j] if j < len(labels) else "unknown",
+                    "bbox": boxes[j].tolist() if hasattr(boxes[j], 'tolist') else list(boxes[j]),
+                    "confidence": round(float(scores[j]), 3) if j < len(scores) else 0,
+                }
+                for j in range(len(boxes))
+            ],
+        })
+
+    total_boxes = sum(f["num_detections"] for f in frames)
+    unique_labels = set()
+    for f in frames:
+        for o in f["objects"]:
+            unique_labels.add(o["label"])
+
+    return {
+        "total_detections": total_boxes,
+        "unique_labels": sorted(unique_labels),
+        "frames_detected": len(frames),
+        "frames": frames,
+    }
+
+
+@router.get("/{run_id}/frame/{idx}/dino")
+async def get_dino_frame(run_id: str, idx: int, request: Request):
+    """Return keyframe with DINO detection boxes (available after dino step)."""
+    run = _get_run(run_id, request)
+    data = _get_data(run)
+
+    keyframes = data.get("keyframes")
+    dino_results = data.get("dino_results")
+    if keyframes is None:
+        raise HTTPException(status_code=409, detail="Preprocess step not completed")
+    if dino_results is None:
+        raise HTTPException(status_code=409, detail="DINO step not completed")
+    if idx < 0 or idx >= len(keyframes):
+        raise HTTPException(status_code=404, detail=f"Frame index {idx} out of range")
+
+    result = dino_results.get(idx, {})
+    boxes = result.get("boxes", [])
+    labels = result.get("labels", [])
+    scores = result.get("scores", [])
+    dets = [
+        {"label": labels[j] if j < len(labels) else "unknown",
+         "bbox": boxes[j].tolist() if hasattr(boxes[j], 'tolist') else list(boxes[j]),
+         "confidence": float(scores[j]) if j < len(scores) else 0}
+        for j in range(len(boxes))
+    ]
+    jpeg_bytes = detection_frame_jpeg(keyframes[idx], dets)
+    return StreamingResponse(io.BytesIO(jpeg_bytes), media_type="image/jpeg")
+
+
+@router.get("/{run_id}/raw-detections")
+async def get_raw_detections(run_id: str, request: Request):
+    """Return raw detection data from DINO+SAM2 tracking (after tracking step)."""
+    run = _get_run(run_id, request)
+    data = _get_data(run)
+
+    all_detections = data.get("all_detections")
+    timestamps = data.get("timestamps", [])
+    if all_detections is None:
+        raise HTTPException(status_code=409, detail="Tracking step not completed")
+
+    frames = []
+    for i, dets in enumerate(all_detections):
+        ts = timestamps[i] if i < len(timestamps) else 0
+        frames.append({
+            "frame_index": i,
+            "timestamp": round(ts, 2),
+            "num_detections": len(dets),
+            "objects": [
+                {
+                    "id": d.get("id", 0),
+                    "label": d.get("label", "unknown"),
+                    "bbox": d.get("bbox", [0, 0, 0, 0]),
+                }
+                for d in dets
+            ],
+        })
+
+    total_dets = sum(len(d) for d in all_detections)
+    unique_labels = set()
+    for dets in all_detections:
+        for d in dets:
+            unique_labels.add(d.get("label", "unknown"))
+
+    return {
+        "total_detections": total_dets,
+        "unique_objects": len(unique_labels),
+        "unique_labels": sorted(unique_labels),
+        "frames_tracked": len(all_detections),
+        "frames": frames,
+    }
 
 
 # ------------------------------------------------------------------

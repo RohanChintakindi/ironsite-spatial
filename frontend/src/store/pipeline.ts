@@ -1,5 +1,5 @@
 import { create } from 'zustand'
-import type { StepStatusType, PreprocessData, DashboardData, TrajectoryData, SceneGraph } from '../api/types'
+import type { StepStatusType, PreprocessData, DashboardData, TrajectoryData, SceneGraph, EventsData, RawDetectionData, DinoDetectionData } from '../api/types'
 
 export interface StepState {
   status: StepStatusType
@@ -10,10 +10,12 @@ export interface StepState {
 
 export const STEP_ORDER = [
   'preprocess',
-  'detection',
+  'dino',
+  'tracking',
   'reconstruction',
   'scene_graphs',
   'graph',
+  'events',
   'memory',
   'vlm',
 ] as const
@@ -22,10 +24,12 @@ export type StepName = (typeof STEP_ORDER)[number]
 
 export const STEP_LABELS: Record<StepName, string> = {
   preprocess: 'Preprocessing',
-  detection: 'Detection & Tracking',
+  dino: 'DINO Detection',
+  tracking: 'SAM2 Tracking',
   reconstruction: '3D Reconstruction',
   scene_graphs: 'Scene Graphs',
   graph: 'Spatial Graph',
+  events: 'Event Analysis',
   memory: 'Spatial Memory',
   vlm: 'VLM Analysis',
 }
@@ -41,10 +45,13 @@ interface PipelineStore {
 
   // Fetched data cache
   preprocessData: PreprocessData | null
+  dinoData: DinoDetectionData | null
   detections: SceneGraph[] | null
   trajectoryData: TrajectoryData | null
   dashboardData: DashboardData | null
   sceneGraphs: SceneGraph[] | null
+  rawDetections: RawDetectionData | null
+  eventsData: EventsData | null
   vlmData: Record<string, unknown> | null
 
   // Actions
@@ -53,20 +60,25 @@ interface PipelineStore {
   setPipelineStatus: (s: 'idle' | 'running' | 'completed' | 'error') => void
   updateStep: (step: StepName, update: Partial<StepState>) => void
   setPreprocessData: (d: PreprocessData) => void
+  setDinoData: (d: DinoDetectionData) => void
+  setRawDetections: (d: RawDetectionData) => void
   setDetections: (d: SceneGraph[]) => void
   setTrajectoryData: (d: TrajectoryData) => void
   setDashboardData: (d: DashboardData) => void
   setSceneGraphs: (d: SceneGraph[]) => void
+  setEventsData: (d: EventsData) => void
   setVlmData: (d: Record<string, unknown>) => void
   reset: () => void
 }
 
 const initialSteps: Record<StepName, StepState> = {
   preprocess: { status: 'pending', progress: 0 },
-  detection: { status: 'pending', progress: 0 },
+  dino: { status: 'pending', progress: 0 },
+  tracking: { status: 'pending', progress: 0 },
   reconstruction: { status: 'pending', progress: 0 },
   scene_graphs: { status: 'pending', progress: 0 },
   graph: { status: 'pending', progress: 0 },
+  events: { status: 'pending', progress: 0 },
   memory: { status: 'pending', progress: 0 },
   vlm: { status: 'pending', progress: 0 },
 }
@@ -77,10 +89,13 @@ export const usePipelineStore = create<PipelineStore>((set) => ({
   pipelineStatus: 'idle',
   steps: { ...initialSteps },
   preprocessData: null,
+  dinoData: null,
+  rawDetections: null,
   detections: null,
   trajectoryData: null,
   dashboardData: null,
   sceneGraphs: null,
+  eventsData: null,
   vlmData: null,
 
   setRunId: (id) => set({ runId: id }),
@@ -94,10 +109,13 @@ export const usePipelineStore = create<PipelineStore>((set) => ({
       },
     })),
   setPreprocessData: (d) => set({ preprocessData: d }),
+  setDinoData: (d) => set({ dinoData: d }),
+  setRawDetections: (d) => set({ rawDetections: d }),
   setDetections: (d) => set({ detections: d }),
   setTrajectoryData: (d) => set({ trajectoryData: d }),
   setDashboardData: (d) => set({ dashboardData: d }),
   setSceneGraphs: (d) => set({ sceneGraphs: d }),
+  setEventsData: (d) => set({ eventsData: d }),
   setVlmData: (d) => set({ vlmData: d }),
   reset: () =>
     set({
@@ -106,10 +124,13 @@ export const usePipelineStore = create<PipelineStore>((set) => ({
       pipelineStatus: 'idle',
       steps: { ...initialSteps },
       preprocessData: null,
+      dinoData: null,
+      rawDetections: null,
       detections: null,
       trajectoryData: null,
       dashboardData: null,
       sceneGraphs: null,
+      eventsData: null,
       vlmData: null,
     }),
 }))

@@ -37,6 +37,55 @@ def frame_to_jpeg(frame_rgb: np.ndarray, quality: int = 85) -> bytes:
     return buf.getvalue()
 
 
+def detection_frame_jpeg(
+    frame_rgb: np.ndarray,
+    detections: list[dict],
+    quality: int = 85,
+) -> bytes:
+    """Draw simple DINO-style bounding boxes (green outlines, yellow labels).
+
+    Works with raw detection dicts that have 'label' and 'bbox' keys
+    (from all_detections, before scene graph enrichment).
+    """
+    img = Image.fromarray(frame_rgb.copy())
+    draw = ImageDraw.Draw(img, "RGBA")
+
+    try:
+        font = ImageFont.truetype("arial.ttf", 12)
+    except (OSError, IOError):
+        try:
+            font = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", 12)
+        except (OSError, IOError):
+            font = ImageFont.load_default()
+
+    for det in detections:
+        label = det.get("label", "unknown")
+        bbox = det.get("bbox", [0, 0, 0, 0])
+        x1, y1, x2, y2 = [int(v) for v in bbox]
+
+        # Green rectangle (like notebook Cell 5)
+        for offset in range(2):
+            draw.rectangle(
+                [x1 - offset, y1 - offset, x2 + offset, y2 + offset],
+                outline=(0, 255, 0),
+            )
+
+        # Yellow label on black background
+        text_bbox = draw.textbbox((x1, y1), label, font=font)
+        tw = text_bbox[2] - text_bbox[0]
+        th = text_bbox[3] - text_bbox[1]
+        bg_y1 = max(y1 - th - 4, 0)
+        draw.rectangle(
+            [x1, bg_y1, x1 + tw + 4, bg_y1 + th + 4],
+            fill=(0, 0, 0, 180),
+        )
+        draw.text((x1 + 2, bg_y1 + 1), label, fill=(255, 255, 0, 255), font=font)
+
+    buf = io.BytesIO()
+    img.convert("RGB").save(buf, format="JPEG", quality=quality)
+    return buf.getvalue()
+
+
 def annotated_frame_jpeg(
     frame_rgb: np.ndarray,
     objects: list[dict],

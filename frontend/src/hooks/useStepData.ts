@@ -2,10 +2,13 @@ import { useEffect } from 'react'
 import { usePipelineStore, type StepName } from '../store/pipeline'
 import {
   getPreprocessData,
+  getDinoDetections,
   getDetections,
+  getRawDetections,
   getTrajectory,
   getDashboardData,
   getSceneGraphs,
+  getEvents,
   getVlmAnalysis,
 } from '../api/client'
 
@@ -13,10 +16,13 @@ export function useStepData() {
   const runId = usePipelineStore((s) => s.runId)
   const steps = usePipelineStore((s) => s.steps)
   const setPreprocessData = usePipelineStore((s) => s.setPreprocessData)
+  const setDinoData = usePipelineStore((s) => s.setDinoData)
+  const setRawDetections = usePipelineStore((s) => s.setRawDetections)
   const setDetections = usePipelineStore((s) => s.setDetections)
   const setTrajectoryData = usePipelineStore((s) => s.setTrajectoryData)
   const setDashboardData = usePipelineStore((s) => s.setDashboardData)
   const setSceneGraphs = usePipelineStore((s) => s.setSceneGraphs)
+  const setEventsData = usePipelineStore((s) => s.setEventsData)
   const setVlmData = usePipelineStore((s) => s.setVlmData)
 
   const fetchOnComplete = (step: StepName, fetcher: () => void) => {
@@ -37,6 +43,32 @@ export function useStepData() {
     })
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [runId, steps.preprocess.status])
+
+  useEffect(() => {
+    if (!runId) return
+    fetchOnComplete('dino', async () => {
+      try {
+        const data = await getDinoDetections(runId)
+        setDinoData(data)
+      } catch (e) {
+        console.error('Failed to fetch DINO detections:', e)
+      }
+    })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [runId, steps.dino.status])
+
+  useEffect(() => {
+    if (!runId) return
+    fetchOnComplete('tracking', async () => {
+      try {
+        const data = await getRawDetections(runId)
+        setRawDetections(data)
+      } catch (e) {
+        console.error('Failed to fetch tracking data:', e)
+      }
+    })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [runId, steps.tracking.status])
 
   useEffect(() => {
     if (!runId) return
@@ -80,6 +112,19 @@ export function useStepData() {
     })
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [runId, steps.memory.status])
+
+  useEffect(() => {
+    if (!runId) return
+    fetchOnComplete('events', async () => {
+      try {
+        const data = await getEvents(runId)
+        setEventsData(data)
+      } catch (e) {
+        console.error('Failed to fetch events data:', e)
+      }
+    })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [runId, steps.events.status])
 
   useEffect(() => {
     if (!runId) return

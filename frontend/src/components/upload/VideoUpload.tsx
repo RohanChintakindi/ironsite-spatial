@@ -9,6 +9,8 @@ export default function VideoUpload() {
   const [fileName, setFileName] = useState('')
   const [backend, setBackend] = useState<'vggtx' | 'fastvggt'>('vggtx')
   const [interval, setInterval] = useState(10)
+  const [grokKey, setGrokKey] = useState('')
+  const [skipVlm, setSkipVlm] = useState(true)
   const [showConfig, setShowConfig] = useState(false)
   const [loading, setLoading] = useState(false)
   const [uploading, setUploading] = useState(false)
@@ -63,7 +65,8 @@ export default function VideoUpload() {
         backend,
         keyframe_interval: interval,
         max_frames: 0,
-        skip_vlm: true,
+        grok_key: grokKey.trim() || undefined,
+        skip_vlm: skipVlm,
       })
       setRunId(run_id)
       setPipelineStatus('running')
@@ -72,7 +75,7 @@ export default function VideoUpload() {
     } finally {
       setLoading(false)
     }
-  }, [videoPath, backend, interval, setRunId, setPipelineStatus])
+  }, [videoPath, backend, interval, grokKey, skipVlm, setRunId, setPipelineStatus])
 
   return (
     <div className="w-full max-w-lg mx-auto">
@@ -177,6 +180,32 @@ export default function VideoUpload() {
               className="w-20 bg-[#1a1a1a] border border-[#222] rounded px-2 py-1 text-xs text-[#e4e4e7] font-data text-right focus:outline-none focus:border-[#f59e0b]/50"
             />
           </div>
+          <div className="flex items-center justify-between">
+            <label className="text-xs text-[#a1a1aa]">VLM Analysis</label>
+            <button
+              onClick={() => setSkipVlm(!skipVlm)}
+              className={clsx(
+                'px-3 py-1 rounded text-xs font-data transition-colors',
+                !skipVlm
+                  ? 'bg-[#f59e0b]/20 text-[#f59e0b] border border-[#f59e0b]/30'
+                  : 'bg-[#1a1a1a] text-[#52525b] border border-[#222]',
+              )}
+            >
+              {skipVlm ? 'Disabled' : 'Enabled'}
+            </button>
+          </div>
+          {!skipVlm && (
+            <div>
+              <label className="text-xs text-[#a1a1aa] block mb-1.5">Grok API Key</label>
+              <input
+                type="password"
+                value={grokKey}
+                onChange={(e) => setGrokKey(e.target.value)}
+                placeholder="xai-..."
+                className="w-full bg-[#1a1a1a] border border-[#222] rounded px-3 py-1.5 text-xs text-[#e4e4e7] font-data focus:outline-none focus:border-[#f59e0b]/50 placeholder-[#52525b]"
+              />
+            </div>
+          )}
         </div>
       )}
 
