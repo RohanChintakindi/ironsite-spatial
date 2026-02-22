@@ -220,6 +220,30 @@ def _step_graph(config: dict, data: dict) -> dict:
     }
 
 
+def _step_events(config: dict, data: dict) -> dict:
+    """Step 4.75: Extract events from scene graphs."""
+    _ensure_project_on_path()
+    from utils.events import extract_events
+
+    event_result = extract_events(data["scene_graphs"])
+    data["event_result"] = event_result
+
+    # Save to disk
+    import json
+    output_dir = data["output_dir"]
+    with open(os.path.join(output_dir, "events.json"), "w") as f:
+        json.dump(event_result, f, indent=2, default=str)
+
+    stats = event_result.get("stats", {})
+    return {
+        "num_events": len(event_result.get("events", [])),
+        "timeline_segments": len(event_result.get("timeline", [])),
+        "production_pct": stats.get("production_pct", 0),
+        "prep_pct": stats.get("prep_pct", 0),
+        "downtime_pct": stats.get("downtime_pct", 0),
+    }
+
+
 def _step_memory(config: dict, data: dict) -> dict:
     """Step 5: Build FAISS spatial memory."""
     _ensure_project_on_path()
@@ -242,17 +266,28 @@ def _step_memory(config: dict, data: dict) -> dict:
 
 
 def _step_vlm(config: dict, data: dict) -> dict:
-    """Step 6: VLM reasoning via Grok (optional)."""
+    """Step 6: VLM narrator (optional — summarizes events)."""
     grok_key = config.get("grok_key")
     skip_vlm = config.get("skip_vlm", True)
 
+    # Always populate vlm_analysis with event engine results
+    event_result = data.get("event_result", {})
+    data["vlm_analysis"] = {
+        **(event_result.get("stats", {})),
+        "activity_timeline": event_result.get("timeline", []),
+        "safety": event_result.get("ppe_report", {}),
+    }
+
     if skip_vlm or not grok_key:
-        data["vlm_analysis"] = {}
-        return {"skipped": True, "reason": "skip_vlm flag or no grok_key"}
+        return {"skipped": True, "reason": "skip_vlm flag or no grok_key",
+                "events_available": True}
 
     _ensure_project_on_path()
     from config import GROK_MODEL, GROK_BASE_URL, VLM_NUM_SAMPLES, VLM_TEMPERATURE, VLM_MAX_TOKENS
     from utils.vlm import run_vlm_analysis
+    from utils.events import events_to_vlm_context
+
+    event_context = events_to_vlm_context(event_result) if event_result else None
 
     analysis = run_vlm_analysis(
         data["scene_graphs"],
@@ -266,6 +301,7 @@ def _step_vlm(config: dict, data: dict) -> dict:
         spatial_graph=data.get("spatial_graph"),
         keyframes=data.get("keyframes"),
         num_images=5,
+        event_context=event_context,
     )
 
     data["vlm_analysis"] = analysis
@@ -287,6 +323,7 @@ PIPELINE_STEPS = [
     ("reconstruction", _step_reconstruction),
     ("scene_graphs", _step_scene_graphs),
     ("graph", _step_graph),
+    ("events", _step_events),
     ("memory", _step_memory),
     ("vlm", _step_vlm),
 ]

@@ -10,7 +10,7 @@ import numpy as np
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import JSONResponse, StreamingResponse
 
-from backend.services.serializer import (
+from services.serializer import (
     annotated_frame_jpeg,
     dashboard_data_from_scene_graphs,
     depth_to_plasma_jpeg,
@@ -59,12 +59,15 @@ async def get_preprocess_info(run_id: str, request: Request):
     fps = data.get("fps", 0)
     w = data.get("w", 0)
     h = data.get("h", 0)
+    duration = timestamps[-1] if timestamps else 0
 
     return {
-        "count": len(keyframes),
+        "num_keyframes": len(keyframes),
         "fps": fps,
-        "resolution": {"width": w, "height": h},
+        "width": w,
+        "height": h,
         "timestamps": [round(t, 3) for t in timestamps],
+        "duration": round(duration, 2),
     }
 
 
@@ -259,6 +262,23 @@ async def get_vlm_analysis(run_id: str, request: Request):
         return {"skipped": True, "analysis": {}}
 
     return {"skipped": False, "analysis": vlm}
+
+
+# ------------------------------------------------------------------
+# Events
+# ------------------------------------------------------------------
+
+@router.get("/{run_id}/events")
+async def get_events(run_id: str, request: Request):
+    """Return event engine results (events, timeline, stats, PPE)."""
+    run = _get_run(run_id, request)
+    data = _get_data(run)
+
+    event_result = data.get("event_result")
+    if event_result is None:
+        raise HTTPException(status_code=409, detail="Event engine step not completed")
+
+    return event_result
 
 
 # ------------------------------------------------------------------

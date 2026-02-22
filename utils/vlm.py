@@ -69,20 +69,26 @@ def _frame_to_base64(frame_rgb, max_size=768):
 def run_vlm_analysis(scene_graphs, video_path, api_key, model="grok-3-fast",
                      base_url="https://api.x.ai/v1", num_samples=30,
                      temperature=0.3, max_tokens=4000,
-                     spatial_graph=None, keyframes=None, num_images=5):
+                     spatial_graph=None, keyframes=None, num_images=5,
+                     event_context=None):
     """Run VLM analysis with structured graph context and optional frame images.
 
     Args:
         spatial_graph: SpatialGraph instance (from utils.graph). If provided,
             uses structured graph serialization instead of raw JSON.
+        event_context: Pre-computed event engine text (from events_to_vlm_context).
+            If provided, this is used as the primary context (much more compact).
         keyframes: List of RGB numpy arrays. If provided with spatial_graph,
             sends the most interesting frames as images (multimodal).
         num_images: Number of frame images to send (default 5).
     """
     client = OpenAI(api_key=api_key, base_url=base_url)
 
-    # Build context: prefer graph serialization, fall back to raw JSON
-    if spatial_graph is not None:
+    # Build context: prefer event summary > graph serialization > raw JSON
+    if event_context is not None:
+        context_str = event_context
+        context_type = "events"
+    elif spatial_graph is not None:
         graph_text = spatial_graph.serialize_for_vlm(max_frames=num_samples)
         context_str = graph_text
         context_type = "graph"
@@ -135,7 +141,17 @@ def run_vlm_analysis(scene_graphs, video_path, api_key, model="grok-3-fast",
         print(f"  Sending {len(image_frame_indices)} frame images (frames: {image_frame_indices})")
 
     # Add text context
-    if context_type == "graph":
+    if context_type == "events":
+        text_prompt = (
+            f"Below is an automated event analysis from a construction worker's body camera. "
+            f"The images show key moments. Use both to write a detailed narration of the "
+            f"worker's activity, confirm or correct the automated findings, and note anything "
+            f"the automation may have missed.\n\n"
+            f"EVENT ENGINE OUTPUT:\n{context_str}\n\n"
+            f"Video: {video_path}\n"
+            f"Provide your full analysis as JSON."
+        )
+    elif context_type == "graph":
         text_prompt = (
             f"Analyze this construction worker's activity from structured spatial graph data "
             f"spanning the full video.\n\n"

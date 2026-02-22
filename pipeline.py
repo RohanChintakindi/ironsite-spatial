@@ -27,6 +27,7 @@ from utils.detection import run_dino_detections, run_sam2_tracking
 from utils.depth import run_full_3d_pipeline
 from utils.scene_graph import build_scene_graphs
 from utils.graph import SpatialGraph
+from utils.events import extract_events, events_to_vlm_context
 from utils.memory import SpatialMemory
 from utils.vlm import run_vlm_analysis
 from utils.visualize import (
@@ -230,6 +231,42 @@ def main():
     print(f"  Completed in {time.time() - t0:.1f}s")
 
     # ==========================================
+    # Step 4.75: Event Engine
+    # ==========================================
+    print("\n" + "=" * 60)
+    print("STEP 4.75: Event Engine (pattern extraction)")
+    print("=" * 60)
+    t0 = time.time()
+
+    event_result = extract_events(scene_graphs)
+
+    # Save events
+    import json as _json
+    with open(os.path.join(args.output, "events.json"), "w") as f:
+        _json.dump(event_result, f, indent=2, default=str)
+    print(f"Saved events.json")
+
+    stats = event_result.get("stats", {})
+    if stats:
+        print(f"\n  Production: {stats.get('production_pct', 0):.0f}%  |  "
+              f"Prep: {stats.get('prep_pct', 0):.0f}%  |  "
+              f"Downtime: {stats.get('downtime_pct', 0):.0f}%  |  "
+              f"Standby: {stats.get('standby_pct', 0):.0f}%")
+        print(f"  Distance: {stats.get('distance_traveled_m', 0):.1f}m  |  "
+              f"Block interactions: {stats.get('block_interactions', 0)}  |  "
+              f"Tool pickups: {stats.get('tool_pickups', 0)}")
+
+    ppe = event_result.get("ppe_report", {})
+    if ppe:
+        print(f"  PPE — Vest: {ppe.get('vest_visible_pct', 0):.0f}%  |  "
+              f"Helmet: {ppe.get('helmet_visible_pct', 0):.0f}%  |  "
+              f"Gloves: {ppe.get('gloves_visible_pct', 0):.0f}%")
+        for concern in ppe.get("concerns", []):
+            print(f"    ! {concern}")
+
+    print(f"  Completed in {time.time() - t0:.1f}s")
+
+    # ==========================================
     # Step 5: FAISS Spatial Memory
     # ==========================================
     print("\n" + "=" * 60)
@@ -251,16 +288,21 @@ def main():
     print(f"  Worker near block (<2m): {len(placements)} frames")
 
     # ==========================================
-    # Step 6: VLM Reasoning (Graph + Vision)
+    # Step 6: VLM Narrator (optional — summarizes events)
     # ==========================================
-    analysis_json = {}
+    analysis_json = event_result.get("stats", {})
+    analysis_json["activity_timeline"] = event_result.get("timeline", [])
+    analysis_json["safety"] = event_result.get("ppe_report", {})
+
     if not args.skip_vlm:
         if args.grok_key:
             print("\n" + "=" * 60)
-            print("STEP 6: VLM Reasoning via Grok (Graph + Vision)")
+            print("STEP 6: VLM Narrator (event summary → Grok)")
             print("=" * 60)
             t0 = time.time()
 
+            # Send compact event summary + key frame images to VLM
+            event_context = events_to_vlm_context(event_result)
             analysis_json = run_vlm_analysis(
                 scene_graphs, args.video, args.grok_key,
                 model=GROK_MODEL, base_url=GROK_BASE_URL,
@@ -269,12 +311,13 @@ def main():
                 spatial_graph=spatial_graph,
                 keyframes=keyframes,
                 num_images=5,
+                event_context=event_context,
             )
             print(f"  Completed in {time.time() - t0:.1f}s")
         else:
-            print("\nSkipping VLM (no --grok-key). Add it to get activity analysis.")
+            print("\nSkipping VLM narrator (no --grok-key). Event analysis above is complete.")
     else:
-        print("\nSkipping VLM (--skip-vlm)")
+        print("\nSkipping VLM narrator (--skip-vlm). Event analysis above is complete.")
 
     # ==========================================
     # Step 7: Visualization & Export
