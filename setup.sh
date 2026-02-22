@@ -14,10 +14,8 @@ if [ ! -d "Grounded-SAM-2" ]; then
     git clone https://github.com/IDEA-Research/Grounded-SAM-2.git
     cd Grounded-SAM-2
     SAM2_BUILD_CUDA=0 pip install -e ".[notebooks]" -q
-    export CUDA_HOME=/usr/local/cuda
-    pip install --no-build-isolation -e grounding_dino -q
+    # Grounding DINO loaded from HuggingFace Transformers (no CUDA build needed)
     cd checkpoints && bash download_ckpts.sh && cd ..
-    cd gdino_checkpoints && bash download_ckpts.sh && cd ..
     cd ..
 else
     echo "Grounded-SAM-2 already installed"
