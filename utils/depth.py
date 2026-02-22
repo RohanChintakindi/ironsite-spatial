@@ -210,34 +210,77 @@ def unproject_to_world(cx_px, cy_px, depth, intrinsics, extrinsics):
 
 def run_full_3d_pipeline(scene_dir, output_dir, merging=6, merge_ratio=0.9,
                          depth_conf_thresh=3.0, max_points=100000, num_keyframes=0):
-    """Run the full FastVGGT pipeline: reconstruct → parse → load depths."""
+    """Run FastVGGT and load predictions directly (no COLMAP roundtrip)."""
 
     recon_dir = os.path.join(output_dir, "recon")
+    npz_path = os.path.join(recon_dir, "predictions.npz")
 
-    # Check if already computed
-    try:
-        colmap_dir = find_colmap_output(recon_dir)
-        print(f"Found existing reconstruction: {colmap_dir}")
-    except FileNotFoundError:
+    # Run FastVGGT if predictions don't exist yet
+    if not os.path.exists(npz_path):
         run_fastvggt(scene_dir, recon_dir, merging, merge_ratio,
                      depth_conf_thresh, max_points)
-        colmap_dir = find_colmap_output(recon_dir)
 
-    # Parse COLMAP
-    intrinsics, image_data, points_xyz, points_rgb, img_to_points3d = parse_colmap(colmap_dir)
+    if not os.path.exists(npz_path):
+        raise FileNotFoundError(f"FastVGGT did not produce {npz_path}")
+
+    # Load predictions directly from .npz
+    print(f"Loading predictions from {npz_path}")
+    data = np.load(npz_path, allow_pickle=True)
+    extrinsics_all = data["extrinsics"]   # (N, 4, 4)
+    intrinsics_all = data["intrinsics"]   # (N, 3, 3)
+    image_names = list(data["image_names"])
+    orig_hw = data["orig_hw"]  # [H, W]
+
+    # Use first frame's intrinsics as shared (same as notebook)
+    K = intrinsics_all[0]
+    fx, fy = float(K[0, 0]), float(K[1, 1])
+    cx, cy = float(K[0, 2]), float(K[1, 2])
+    intrinsics = np.array([
+        [fx, 0, cx],
+        [0, fy, cy],
+        [0, 0, 1]
+    ], dtype=np.float32)
+    print(f"  Intrinsics: fx={fx:.1f}, fy={fy:.1f}, cx={cx:.1f}, cy={cy:.1f}")
+
+    # Build per-image data (same format as notebook's frame_to_extri)
+    image_data = {}
+    cam_positions = []
+    for i, fname in enumerate(image_names):
+        T = extrinsics_all[i].astype(np.float32)  # 4x4 world-to-camera
+        R = T[:3, :3]
+        t = T[:3, 3]
+        cam_center = -R.T @ t  # camera position in world coords
+
+        image_data[fname] = {
+            "extrinsics": T,
+            "cam_center": cam_center,
+        }
+        cam_positions.append(cam_center)
+
+    cam_positions = np.array(cam_positions) if cam_positions else np.zeros((0, 3))
+    print(f"  Camera poses: {len(image_data)}")
 
     # Load depth maps
     depth_dir = find_depth_dir(recon_dir)
     depth_map_cache = load_depth_maps(depth_dir, num_keyframes)
 
-    # Build camera trajectory (smoothed)
-    cam_positions = []
-    frame_names_ordered = sorted(image_data.keys())
-    for fname in frame_names_ordered:
-        cam_positions.append(image_data[fname]["cam_center"])
-    cam_positions = np.array(cam_positions) if cam_positions else np.zeros((0, 3))
+    # Load point cloud from PLY if available
+    ply_path = os.path.join(recon_dir, "sparse", "points.ply")
+    points_xyz = np.zeros((0, 3))
+    points_rgb = np.zeros((0, 3), dtype=np.uint8)
+    if os.path.exists(ply_path):
+        try:
+            import trimesh
+            cloud = trimesh.load(ply_path)
+            points_xyz = np.array(cloud.vertices)
+            points_rgb = np.array(cloud.colors[:, :3]) if cloud.colors is not None else np.zeros((len(points_xyz), 3), dtype=np.uint8)
+            print(f"  Point cloud: {len(points_xyz)} points")
+        except Exception:
+            print("  Point cloud: failed to load PLY")
+    else:
+        print("  Point cloud: no PLY file")
 
-    # Smooth trajectory
+    # Smooth camera trajectory
     if len(cam_positions) > 10:
         window = 5
         smoothed = np.copy(cam_positions)
@@ -254,9 +297,6 @@ def run_full_3d_pipeline(scene_dir, output_dir, merging=6, merge_ratio=0.9,
             np.diff(cam_positions_smooth, axis=0), axis=1
         )))
 
-    print(f"\n3D Reconstruction Summary:")
-    print(f"  Camera poses: {len(image_data)}")
-    print(f"  Point cloud: {len(points_xyz)} points")
     print(f"  Depth maps: {len(depth_map_cache)}")
     print(f"  Worker distance: {total_dist:.1f}m")
 
@@ -265,10 +305,10 @@ def run_full_3d_pipeline(scene_dir, output_dir, merging=6, merge_ratio=0.9,
         "image_data": image_data,
         "points_xyz": points_xyz,
         "points_rgb": points_rgb,
-        "img_to_points3d": img_to_points3d,
+        "img_to_points3d": {},  # not needed without COLMAP tracks
         "depth_map_cache": depth_map_cache,
         "cam_positions": cam_positions,
         "cam_positions_smooth": cam_positions_smooth,
         "total_distance": total_dist,
-        "colmap_dir": colmap_dir,
+        "colmap_dir": recon_dir,
     }

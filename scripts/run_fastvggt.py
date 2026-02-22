@@ -110,22 +110,12 @@ def save_depth_maps(depth_np, depth_conf, image_paths, output_dir, conf_thresh=3
     return depth_filtered
 
 
-def save_colmap(extrinsics, intrinsics, depth, image_paths, images_np, output_dir, max_points=100000):
-    """Export COLMAP reconstruction from decoded FastVGGT predictions."""
-    import pycolmap
-
-    sparse_dir = Path(output_dir) / "sparse" / "0"
-    sparse_dir.mkdir(parents=True, exist_ok=True)
-
+def save_point_cloud(extrinsics, intrinsics, depth, images_np, output_dir, max_points=100000):
+    """Unproject depth to 3D points and save as PLY."""
     N, H_d, W_d = depth.shape
     H_img, W_img = images_np.shape[1], images_np.shape[2]
 
-    # Build COLMAP reconstruction
-    reconstruction = pycolmap.Reconstruction()
-
-    # Add camera (shared)
     K = intrinsics[0]
-    # Scale intrinsics from depth resolution to image resolution
     sx = W_img / W_d
     sy = H_img / H_d
     fx = float(K[0, 0] * sx)
@@ -133,36 +123,6 @@ def save_colmap(extrinsics, intrinsics, depth, image_paths, images_np, output_di
     cx = float(K[0, 2] * sx)
     cy = float(K[1, 2] * sy)
 
-    cam = pycolmap.Camera(
-        model="PINHOLE",
-        width=W_img,
-        height=H_img,
-        params=[fx, fy, cx, cy],
-        camera_id=1,
-    )
-    reconstruction.add_camera(cam)
-
-    # Add images with poses
-    for i, img_path in enumerate(image_paths):
-        T = extrinsics[i]  # 4x4 world-to-camera
-        R = T[:3, :3]
-        t = T[:3, 3]
-
-        img = pycolmap.Image(
-            image_id=i + 1,
-            camera_id=1,
-            name=Path(img_path).name,
-        )
-        # Set pose: cam_from_world
-        img.cam_from_world = pycolmap.Rigid3d(
-            pycolmap.Rotation3d(R), t
-        )
-        reconstruction.add_image(img)
-        reconstruction.register_image(i + 1)  # must register for poses to persist
-
-    print(f"Registered {reconstruction.num_reg_images()} images")
-
-    # Unproject depth to 3D points
     print("Unprojecting depth to 3D points...")
     all_points = []
     all_colors = []
@@ -170,8 +130,6 @@ def save_colmap(extrinsics, intrinsics, depth, image_paths, images_np, output_di
     for i in range(N):
         dep = depth[i]
         valid = np.isfinite(dep) & (dep > 0)
-
-        # Subsample to avoid too many points per frame
         ys, xs = np.where(valid)
         if len(ys) == 0:
             continue
@@ -182,28 +140,19 @@ def save_colmap(extrinsics, intrinsics, depth, image_paths, images_np, output_di
             ys, xs = ys[idx], xs[idx]
 
         depths_valid = dep[ys, xs]
-
-        # Scale pixel coords to image resolution for unprojection
-        xs_img = xs * sx
-        ys_img = ys * sy
-
-        # Unproject: pixel (x, y, depth) -> camera coords
-        X_cam = (xs_img - cx) * depths_valid / fx
-        Y_cam = (ys_img - cy) * depths_valid / fy
+        X_cam = (xs * sx - cx) * depths_valid / fx
+        Y_cam = (ys * sy - cy) * depths_valid / fy
         Z_cam = depths_valid
+        pts_cam = np.stack([X_cam, Y_cam, Z_cam], axis=1)
 
-        pts_cam = np.stack([X_cam, Y_cam, Z_cam], axis=1)  # (M, 3)
-
-        # Camera to world
         T = extrinsics[i]
         R = T[:3, :3]
         t = T[:3, 3]
-        pts_world = (R.T @ (pts_cam.T - t[:, None])).T  # (M, 3)
+        pts_world = (R.T @ (pts_cam.T - t[:, None])).T
 
-        # Get colors from image
         ys_img_i = np.clip((ys * sy).astype(int), 0, H_img - 1)
         xs_img_i = np.clip((xs * sx).astype(int), 0, W_img - 1)
-        colors = images_np[i, ys_img_i, xs_img_i]  # (M, 3) uint8
+        colors = images_np[i, ys_img_i, xs_img_i]
 
         all_points.append(pts_world)
         all_colors.append(colors)
@@ -211,38 +160,21 @@ def save_colmap(extrinsics, intrinsics, depth, image_paths, images_np, output_di
     if all_points:
         all_points = np.concatenate(all_points)
         all_colors = np.concatenate(all_colors)
-
-        # Cap total points
         if len(all_points) > max_points:
             idx = np.random.choice(len(all_points), max_points, replace=False)
             all_points = all_points[idx]
             all_colors = all_colors[idx]
 
-        # Add 3D points to reconstruction
-        for j in range(len(all_points)):
-            reconstruction.add_point3D(
-                all_points[j].astype(np.float64),
-                pycolmap.Track(),
-                all_colors[j].astype(np.uint8),
-            )
-
-        print(f"Added {len(all_points)} 3D points")
-
-    # Save
-    reconstruction.write(str(sparse_dir))
-    print(f"COLMAP reconstruction saved to {sparse_dir}")
-
-    # Also save PLY
-    try:
-        import trimesh
-        cloud = trimesh.PointCloud(vertices=all_points, colors=all_colors)
-        ply_path = Path(output_dir) / "sparse" / "points.ply"
-        cloud.export(str(ply_path))
-        print(f"Point cloud saved to {ply_path}")
-    except ImportError:
-        pass
-
-    return str(sparse_dir)
+        try:
+            import trimesh
+            ply_dir = Path(output_dir) / "sparse"
+            ply_dir.mkdir(parents=True, exist_ok=True)
+            cloud = trimesh.PointCloud(vertices=all_points, colors=all_colors)
+            ply_path = ply_dir / "points.ply"
+            cloud.export(str(ply_path))
+            print(f"Point cloud: {len(all_points)} points → {ply_path}")
+        except ImportError:
+            print(f"Unprojected {len(all_points)} points (trimesh not installed for PLY)")
 
 
 def main():
@@ -325,16 +257,31 @@ def main():
     # Save depth maps
     save_depth_maps(depth_np, depth_conf, image_paths, args.output_dir, args.depth_conf_thresh)
 
-    # Save COLMAP reconstruction
-    save_colmap(extrinsics_np, intrinsics_np, depth_np, image_paths, images_np,
-                args.output_dir, args.max_points)
+    # Save predictions as .npz (bypass COLMAP binary format entirely)
+    image_names = [Path(p).name for p in image_paths]
+    npz_path = os.path.join(args.output_dir, "predictions.npz")
+    np.savez(npz_path,
+             extrinsics=extrinsics_np,     # (N, 4, 4)
+             intrinsics=intrinsics_np,     # (N, 3, 3)
+             depth=depth_np,               # (N, H, W)
+             image_names=np.array(image_names),
+             orig_hw=np.array([images_np.shape[1], images_np.shape[2]]),
+    )
+    print(f"Saved predictions to {npz_path}")
+
+    # Save point cloud as PLY for visualization
+    try:
+        save_point_cloud(extrinsics_np, intrinsics_np, depth_np,
+                         images_np, args.output_dir, args.max_points)
+    except Exception as e:
+        print(f"Warning: PLY export failed ({e}), continuing...")
 
     # Free GPU
     del model, predictions
     torch.cuda.empty_cache()
 
     print(f"\nDone! Output in {args.output_dir}")
-    print(f"  sparse/0/     — COLMAP reconstruction")
+    print(f"  predictions.npz   — extrinsics, intrinsics, depth")
     print(f"  estimated_depths/ — per-frame depth maps (.npy)")
 
 
