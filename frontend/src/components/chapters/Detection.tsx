@@ -29,10 +29,7 @@ export default function Detection() {
   const isReconDone = reconstructionStep.status === 'completed'
   const hasFullViz = sceneGraphStep.status === 'completed' && sceneGraphs && sceneGraphs.length > 0
 
-  // Don't render anything if pipeline hasn't started or preprocess isn't done
-  if (pipelineStatus === 'idle' || dinoStep.status === 'pending') return null
-
-  // Sample 6 evenly-spaced frame indices for preview grids
+  // All hooks MUST be above any early return (React Rules of Hooks)
   const dinoSampleIndices = useMemo(() => {
     if (!dinoData) return []
     const frames = dinoData.frames
@@ -51,6 +48,9 @@ export default function Detection() {
   }, [rawDetections, preprocessData])
 
   const total = sceneGraphs?.length ?? 0
+
+  // Don't render anything if pipeline hasn't started or preprocess isn't done
+  if (pipelineStatus === 'idle' || dinoStep.status === 'pending') return null
   const current = sceneGraphs?.[frameIdx]
   const prev = () => setFrameIdx((i) => Math.max(0, i - 1))
   const next = () => setFrameIdx((i) => Math.min(total - 1, i + 1))
