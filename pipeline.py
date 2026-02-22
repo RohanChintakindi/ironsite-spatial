@@ -219,14 +219,14 @@ def main():
     memory.ingest(scene_graphs, args.video)
     memory.save()
 
-    # Demo queries
+    # Demo queries (thresholds in relative depth units, not meters)
     print("\nSample queries:")
     blocks = memory.query_label("block")
     print(f"  Frames with blocks: {len(blocks)}")
-    close = memory.query_depth_range(0.5, 3.0)
-    print(f"  Objects in work range (0.5-3m): {len(close)} frames")
-    placements = memory.query_proximity("person", "block", max_m=2.0)
-    print(f"  Person near block (<2m): {len(placements)} frames")
+    close = memory.query_depth_range(0.05, 0.5)
+    print(f"  Objects in work range: {len(close)} frames")
+    placements = memory.query_proximity("worker", "concrete block", max_m=0.2)
+    print(f"  Worker near block: {len(placements)} frames")
 
     # ==========================================
     # Step 6: VLM Reasoning

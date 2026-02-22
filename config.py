@@ -47,10 +47,12 @@ FASTVGGT_DEPTH_CONF = 3.0  # depth confidence threshold
 FASTVGGT_MAX_POINTS = 100000
 
 # --- Scene Graph ---
-NEAR_THRESHOLD = 1.0  # meters
-FAR_THRESHOLD = 3.0
+# Note: FastVGGT outputs relative depth (0-1.2 range), not metric.
+# Thresholds are in relative units, not meters.
+NEAR_THRESHOLD = 0.1   # ~1m real-world
+FAR_THRESHOLD = 0.3    # ~3m real-world
 HAND_OVERLAP_THRESHOLD = 0.2
-HAND_DEPTH_THRESHOLD = 0.5
+HAND_DEPTH_THRESHOLD = 0.05
 DIRECTION_THRESHOLD_X = 50  # pixels
 DIRECTION_THRESHOLD_Y = 30
 
