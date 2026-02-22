@@ -119,41 +119,44 @@ def run_sam2_tracking(keyframes, frames_dir, device, dino_results,
             os.link(src, dst)
 
         video_predictor = build_sam2_video_predictor(sam2_config, sam2_checkpoint, device=device)
-        inference_state = video_predictor.init_state(video_path=tmp_dir)
 
-        # Register DINO detections from cache for the first frame of this chunk
-        chunk_dino = dino_results.get(chunk_start, dino_results.get(0))
-        next_obj_id = max(object_labels.keys()) + 1 if object_labels else 1
-        for obj_idx in range(len(chunk_dino["boxes"])):
-            obj_id = next_obj_id + obj_idx
-            object_labels[obj_id] = chunk_dino["labels"][obj_idx]
-            video_predictor.add_new_points_or_box(
-                inference_state=inference_state,
-                frame_idx=0, obj_id=obj_id, box=chunk_dino["boxes"][obj_idx],
-            )
+        # Run everything in bfloat16 so Flash Attention works (4-10x faster)
+        with torch.autocast(device_type="cuda", dtype=torch.bfloat16):
+            inference_state = video_predictor.init_state(video_path=tmp_dir)
 
-        # Re-detect within chunk using cached DINO results
-        for global_re_idx in range(chunk_start + redetect_every, chunk_end, redetect_every):
-            if global_re_idx not in dino_results:
-                continue
-            local_re_idx = global_re_idx - chunk_start
-            rd = dino_results[global_re_idx]
-            re_next_id = max(object_labels.keys()) + 1
-            for nb, nl in zip(rd["boxes"], rd["labels"]):
-                object_labels[re_next_id] = nl
+            # Register DINO detections from cache for the first frame of this chunk
+            chunk_dino = dino_results.get(chunk_start, dino_results.get(0))
+            next_obj_id = max(object_labels.keys()) + 1 if object_labels else 1
+            for obj_idx in range(len(chunk_dino["boxes"])):
+                obj_id = next_obj_id + obj_idx
+                object_labels[obj_id] = chunk_dino["labels"][obj_idx]
                 video_predictor.add_new_points_or_box(
                     inference_state=inference_state,
-                    frame_idx=local_re_idx, obj_id=re_next_id, box=nb,
+                    frame_idx=0, obj_id=obj_id, box=chunk_dino["boxes"][obj_idx],
                 )
-                re_next_id += 1
 
-        # Propagate
-        for local_frame_idx, out_obj_ids, out_mask_logits in video_predictor.propagate_in_video(inference_state):
-            global_frame_idx = chunk_start + local_frame_idx
-            video_segments[global_frame_idx] = {}
-            for i, out_obj_id in enumerate(out_obj_ids):
-                mask = (out_mask_logits[i] > 0.0).cpu().numpy().squeeze()
-                video_segments[global_frame_idx][out_obj_id] = mask
+            # Re-detect within chunk using cached DINO results
+            for global_re_idx in range(chunk_start + redetect_every, chunk_end, redetect_every):
+                if global_re_idx not in dino_results:
+                    continue
+                local_re_idx = global_re_idx - chunk_start
+                rd = dino_results[global_re_idx]
+                re_next_id = max(object_labels.keys()) + 1
+                for nb, nl in zip(rd["boxes"], rd["labels"]):
+                    object_labels[re_next_id] = nl
+                    video_predictor.add_new_points_or_box(
+                        inference_state=inference_state,
+                        frame_idx=local_re_idx, obj_id=re_next_id, box=nb,
+                    )
+                    re_next_id += 1
+
+            # Propagate
+            for local_frame_idx, out_obj_ids, out_mask_logits in video_predictor.propagate_in_video(inference_state):
+                global_frame_idx = chunk_start + local_frame_idx
+                video_segments[global_frame_idx] = {}
+                for i, out_obj_id in enumerate(out_obj_ids):
+                    mask = (out_mask_logits[i] > 0.0).cpu().numpy().squeeze()
+                    video_segments[global_frame_idx][out_obj_id] = mask
 
         del video_predictor, inference_state
         torch.cuda.empty_cache()
