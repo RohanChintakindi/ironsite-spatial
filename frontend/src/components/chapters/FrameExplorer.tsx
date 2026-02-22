@@ -6,6 +6,49 @@ import { ChevronLeft, ChevronRight } from 'lucide-react'
 import { annotatedFrameUrl, depthFrameUrl } from '../../api/client'
 import { getClassColor, type SceneGraph } from '../../api/types'
 
+/* ── Reusable mini scrubber for each panel ── */
+function PanelScrubber({
+  idx,
+  total,
+  onChange,
+}: {
+  idx: number
+  total: number
+  onChange: (i: number) => void
+}) {
+  return (
+    <div className="flex items-center gap-3 mt-3">
+      <button
+        onClick={() => onChange(Math.max(0, idx - 1))}
+        disabled={idx === 0}
+        className="p-1.5 rounded-md bg-[#0f0f14] border border-[#1a1a1a] text-[#52525b] hover:text-[#e4e4e7] hover:border-[#333] disabled:opacity-20 disabled:cursor-not-allowed transition-all duration-200"
+      >
+        <ChevronLeft className="w-4 h-4" />
+      </button>
+      <div className="flex-1">
+        <input
+          type="range"
+          min={0}
+          max={total - 1}
+          value={idx}
+          onChange={(e) => onChange(Number(e.target.value))}
+          className="w-full"
+        />
+      </div>
+      <button
+        onClick={() => onChange(Math.min(total - 1, idx + 1))}
+        disabled={idx >= total - 1}
+        className="p-1.5 rounded-md bg-[#0f0f14] border border-[#1a1a1a] text-[#52525b] hover:text-[#e4e4e7] hover:border-[#333] disabled:opacity-20 disabled:cursor-not-allowed transition-all duration-200"
+      >
+        <ChevronRight className="w-4 h-4" />
+      </button>
+      <span className="font-data text-xs text-[#3f3f46] w-24 text-right">
+        {idx + 1} / {total}
+      </span>
+    </div>
+  )
+}
+
 export default function FrameExplorer() {
   const runId = usePipelineStore((s) => s.runId)
   const sceneGraphs = usePipelineStore((s) => s.sceneGraphs) as SceneGraph[] | null
@@ -13,18 +56,22 @@ export default function FrameExplorer() {
   const sceneGraphStep = usePipelineStore((s) => s.steps.scene_graphs)
   const reconstructionStep = usePipelineStore((s) => s.steps.reconstruction)
   const pipelineStatus = usePipelineStore((s) => s.pipelineStatus)
-  const [frameIdx, setFrameIdx] = useState(0)
+
+  // Each panel gets its own frame index
+  const [detIdx, setDetIdx] = useState(0)
+  const [depthIdx, setDepthIdx] = useState(0)
+  const [topDownIdx, setTopDownIdx] = useState(0)
 
   const isReconDone = reconstructionStep.status === 'completed'
   const hasFullViz = sceneGraphStep.status === 'completed' && sceneGraphs && sceneGraphs.length > 0
   const total = sceneGraphs?.length ?? 0
-  const current = sceneGraphs?.[frameIdx]
 
   if (pipelineStatus === 'idle' || !isReconDone) return null
 
-  const prev = () => setFrameIdx((i) => Math.max(0, i - 1))
-  const next = () => setFrameIdx((i) => Math.min(total - 1, i + 1))
-  const camPos = current?.camera_pose?.position
+  const detFrame = sceneGraphs?.[detIdx]
+  const depthFrame = sceneGraphs?.[depthIdx]
+  const topDownFrame = sceneGraphs?.[topDownIdx]
+  const camPos = topDownFrame?.camera_pose?.position
 
   return (
     <section id="chapter-scene_graphs" className="py-16 scroll-mt-14 space-y-20">
@@ -44,7 +91,7 @@ export default function FrameExplorer() {
           <StatusBadge status={sceneGraphStep.status} />
         </div>
         <p className="text-[#a1a1aa] text-[15px] mb-6 max-w-2xl leading-relaxed">
-          Browse each frame with detection overlays, metric depth, and COLMAP world coordinates. Use the scrubber to navigate.
+          Browse each frame with detection overlays, metric depth, and COLMAP world coordinates. Each panel has its own scrubber.
         </p>
 
         {!hasFullViz && (
@@ -57,55 +104,16 @@ export default function FrameExplorer() {
             </span>
           </div>
         )}
-
-        {/* Shared frame scrubber */}
-        {hasFullViz && (
-          <div className="flex items-center gap-4 mb-2">
-            <button
-              onClick={prev}
-              disabled={frameIdx === 0}
-              className="p-2.5 rounded-lg bg-[#0f0f14] border border-[#1a1a1a] text-[#52525b] hover:text-[#e4e4e7] hover:border-[#333] disabled:opacity-20 disabled:cursor-not-allowed transition-all duration-200"
-            >
-              <ChevronLeft className="w-5 h-5" />
-            </button>
-            <div className="flex-1">
-              <input
-                type="range"
-                min={0}
-                max={total - 1}
-                value={frameIdx}
-                onChange={(e) => setFrameIdx(Number(e.target.value))}
-                className="w-full"
-              />
-            </div>
-            <button
-              onClick={next}
-              disabled={frameIdx >= total - 1}
-              className="p-2.5 rounded-lg bg-[#0f0f14] border border-[#1a1a1a] text-[#52525b] hover:text-[#e4e4e7] hover:border-[#333] disabled:opacity-20 disabled:cursor-not-allowed transition-all duration-200"
-            >
-              <ChevronRight className="w-5 h-5" />
-            </button>
-            <span className="font-data text-sm text-[#52525b] w-28 text-right">
-              Frame {frameIdx + 1} / {total}
-            </span>
-          </div>
-        )}
-
-        {hasFullViz && current && (
-          <div className="text-xs font-data text-[#3f3f46] mb-2">
-            {current.timestamp_str} | {current.num_objects} detections
-          </div>
-        )}
       </div>
 
       {/* ─── Panel 1: Detection Overlay ─── */}
-      {hasFullViz && current && runId && (
+      {hasFullViz && detFrame && runId && (
         <motion.div
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.5 }}
         >
-          <h3 className="text-xl font-bold text-[#e4e4e7] mb-2 tracking-tight">
+          <h3 className="text-xl font-bold text-[#e4e4e7] mb-1 tracking-tight">
             Detection Overlay
           </h3>
           <p className="text-[#a1a1aa] text-sm mb-4 max-w-2xl leading-relaxed">
@@ -113,28 +121,34 @@ export default function FrameExplorer() {
           </p>
           <div className="relative rounded-xl overflow-hidden border border-[#1a1a1a] bg-black">
             <img
-              src={annotatedFrameUrl(runId, frameIdx)}
-              alt={`Annotated frame ${frameIdx}`}
+              src={annotatedFrameUrl(runId, detIdx)}
+              alt={`Annotated frame ${detIdx}`}
               className="w-full object-contain"
               loading="lazy"
             />
             <div className="absolute top-4 right-4 bg-[#0a0a0f]/80 backdrop-blur-md px-3 py-1.5 rounded-lg border border-[#222]/50">
               <span className="font-data text-sm text-[#f59e0b]">
-                {current.timestamp_str}
+                {detFrame.timestamp_str}
+              </span>
+            </div>
+            <div className="absolute bottom-4 left-4 bg-[#0a0a0f]/80 backdrop-blur-md px-3 py-1.5 rounded-lg border border-[#222]/50">
+              <span className="font-data text-xs text-[#a1a1aa]">
+                {detFrame.num_objects} detections
               </span>
             </div>
           </div>
+          <PanelScrubber idx={detIdx} total={total} onChange={setDetIdx} />
         </motion.div>
       )}
 
       {/* ─── Panel 2: VGGT-X Depth Map ─── */}
-      {hasFullViz && current && runId && (
+      {hasFullViz && depthFrame && runId && (
         <motion.div
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.5, delay: 0.1 }}
         >
-          <h3 className="text-xl font-bold text-[#e4e4e7] mb-2 tracking-tight">
+          <h3 className="text-xl font-bold text-[#e4e4e7] mb-1 tracking-tight">
             VGGT-X Depth Map
           </h3>
           <p className="text-[#a1a1aa] text-sm mb-4 max-w-2xl leading-relaxed">
@@ -142,28 +156,29 @@ export default function FrameExplorer() {
           </p>
           <div className="relative rounded-xl overflow-hidden border border-[#1a1a1a] bg-black">
             <img
-              src={depthFrameUrl(runId, frameIdx)}
-              alt={`Depth map ${frameIdx}`}
+              src={depthFrameUrl(runId, depthIdx)}
+              alt={`Depth map ${depthIdx}`}
               className="w-full object-contain"
               loading="lazy"
             />
             <div className="absolute top-4 right-4 bg-[#0a0a0f]/80 backdrop-blur-md px-3 py-1.5 rounded-lg border border-[#222]/50">
               <span className="font-data text-sm text-[#06b6d4]">
-                Depth Frame {frameIdx + 1}
+                {depthFrame.timestamp_str}
               </span>
             </div>
           </div>
+          <PanelScrubber idx={depthIdx} total={total} onChange={setDepthIdx} />
         </motion.div>
       )}
 
       {/* ─── Panel 3: COLMAP World Coordinates (Top-Down) ─── */}
-      {hasFullViz && current && (
+      {hasFullViz && topDownFrame && (
         <motion.div
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.5, delay: 0.2 }}
         >
-          <h3 className="text-xl font-bold text-[#e4e4e7] mb-2 tracking-tight">
+          <h3 className="text-xl font-bold text-[#e4e4e7] mb-1 tracking-tight">
             COLMAP World Coordinates
           </h3>
           <p className="text-[#a1a1aa] text-sm mb-4 max-w-2xl leading-relaxed">
@@ -171,11 +186,12 @@ export default function FrameExplorer() {
           </p>
           <div className="rounded-xl overflow-hidden border border-[#1a1a1a]">
             <TopDownPanel
-              sceneGraph={current}
+              sceneGraph={topDownFrame}
               cameraPos={camPos}
               trajectoryData={trajectoryData}
             />
           </div>
+          <PanelScrubber idx={topDownIdx} total={total} onChange={setTopDownIdx} />
         </motion.div>
       )}
     </section>

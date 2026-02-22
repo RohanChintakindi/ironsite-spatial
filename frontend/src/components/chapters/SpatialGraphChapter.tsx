@@ -1,3 +1,4 @@
+import { useMemo, useRef, useEffect, useState } from 'react'
 import Chapter from '../layout/Chapter'
 import { usePipelineStore } from '../../store/pipeline'
 import AnimatedNumber from '../ui/AnimatedNumber'
@@ -47,6 +48,26 @@ export default function SpatialGraphChapter() {
             </div>
           </div>
 
+          {/* ─── Force-directed graph visualization ─── */}
+          <div>
+            <h3 className="text-lg font-bold text-[#e4e4e7] tracking-tight mb-4">Graph Visualization</h3>
+            <div className="rounded-xl overflow-hidden border border-[#1a1a1a]">
+              <ForceGraph
+                nodes={objectNodes}
+                edges={spatialEdges}
+              />
+            </div>
+            {/* Legend */}
+            <div className="flex flex-wrap gap-4 mt-3">
+              {Object.entries(RELATION_COLORS).filter(([k]) => k !== 'NEXT').map(([rel, color]) => (
+                <div key={rel} className="flex items-center gap-1.5">
+                  <div className="w-2.5 h-2.5 rounded-sm" style={{ backgroundColor: color }} />
+                  <span className="text-[10px] font-data text-[#52525b]">{rel}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+
           {/* Relationship breakdown */}
           {stats?.edge_types && Object.keys(stats.edge_types).length > 0 && (
             <div>
@@ -86,7 +107,7 @@ export default function SpatialGraphChapter() {
                 return (
                   <div
                     key={node.id}
-                    className="bg-[#111] rounded-lg p-3 border border-[#222] flex items-center gap-3"
+                    className="bg-[#0f0f14] rounded-lg p-3 border border-[#1a1a1a] flex items-center gap-3"
                   >
                     <div
                       className="w-3 h-3 rounded-full shrink-0"
@@ -138,5 +159,229 @@ export default function SpatialGraphChapter() {
         </div>
       )}
     </Chapter>
+  )
+}
+
+
+/* ── Force-directed graph rendered in SVG ── */
+
+interface GraphNode {
+  id: string
+  type: string
+  label: string
+  color: string
+  [k: string]: unknown
+}
+
+interface GraphEdge {
+  source: string
+  target: string
+  relation: string
+  weight: number
+  color: string
+}
+
+interface SimNode extends GraphNode {
+  x: number
+  y: number
+  vx: number
+  vy: number
+}
+
+function ForceGraph({
+  nodes,
+  edges,
+}: {
+  nodes: GraphNode[]
+  edges: GraphEdge[]
+}) {
+  const W = 900
+  const H = 500
+  const svgRef = useRef<SVGSVGElement>(null)
+  const [hoveredNode, setHoveredNode] = useState<string | null>(null)
+
+  // Build simulation data — run a simple force layout
+  const { simNodes, simEdges } = useMemo(() => {
+    if (nodes.length === 0) return { simNodes: [], simEdges: [] }
+
+    // Deduplicate nodes by id and limit to keep it readable
+    const uniqueMap = new Map<string, GraphNode>()
+    for (const n of nodes) {
+      if (!uniqueMap.has(n.id)) uniqueMap.set(n.id, n)
+    }
+    const uniqueNodes = Array.from(uniqueMap.values()).slice(0, 60)
+    const nodeIds = new Set(uniqueNodes.map((n) => n.id))
+
+    // Filter edges to only include nodes we have
+    const filteredEdges = edges.filter(
+      (e) => nodeIds.has(e.source) && nodeIds.has(e.target),
+    ).slice(0, 150)
+
+    // Initialize positions in a circle
+    const sn: SimNode[] = uniqueNodes.map((n, i) => {
+      const angle = (2 * Math.PI * i) / uniqueNodes.length
+      const r = Math.min(W, H) * 0.3
+      return {
+        ...n,
+        x: W / 2 + r * Math.cos(angle),
+        y: H / 2 + r * Math.sin(angle),
+        vx: 0,
+        vy: 0,
+      }
+    })
+
+    const nodeMap = new Map(sn.map((n) => [n.id, n]))
+
+    // Simple force simulation (run synchronously for ~80 iterations)
+    for (let iter = 0; iter < 80; iter++) {
+      const alpha = 1 - iter / 80
+
+      // Repulsion between all nodes
+      for (let i = 0; i < sn.length; i++) {
+        for (let j = i + 1; j < sn.length; j++) {
+          const dx = sn[j].x - sn[i].x
+          const dy = sn[j].y - sn[i].y
+          const dist = Math.sqrt(dx * dx + dy * dy) || 1
+          const force = (800 * alpha) / (dist * dist)
+          const fx = (dx / dist) * force
+          const fy = (dy / dist) * force
+          sn[i].vx -= fx
+          sn[i].vy -= fy
+          sn[j].vx += fx
+          sn[j].vy += fy
+        }
+      }
+
+      // Attraction along edges
+      for (const e of filteredEdges) {
+        const src = nodeMap.get(e.source)
+        const tgt = nodeMap.get(e.target)
+        if (!src || !tgt) continue
+        const dx = tgt.x - src.x
+        const dy = tgt.y - src.y
+        const dist = Math.sqrt(dx * dx + dy * dy) || 1
+        const force = dist * 0.01 * alpha
+        const fx = (dx / dist) * force
+        const fy = (dy / dist) * force
+        src.vx += fx
+        src.vy += fy
+        tgt.vx -= fx
+        tgt.vy -= fy
+      }
+
+      // Center gravity
+      for (const n of sn) {
+        n.vx += (W / 2 - n.x) * 0.005 * alpha
+        n.vy += (H / 2 - n.y) * 0.005 * alpha
+      }
+
+      // Apply velocity with damping
+      for (const n of sn) {
+        n.vx *= 0.6
+        n.vy *= 0.6
+        n.x += n.vx
+        n.y += n.vy
+        // Keep in bounds
+        n.x = Math.max(40, Math.min(W - 40, n.x))
+        n.y = Math.max(40, Math.min(H - 40, n.y))
+      }
+    }
+
+    return { simNodes: sn, simEdges: filteredEdges }
+  }, [nodes, edges])
+
+  if (simNodes.length === 0) {
+    return (
+      <div className="aspect-[16/9] flex items-center justify-center text-sm text-[#3f3f46] bg-[#0f0f14]">
+        No graph data to visualize
+      </div>
+    )
+  }
+
+  const nodeMap = new Map(simNodes.map((n) => [n.id, n]))
+
+  // Find edges connected to hovered node
+  const highlightedEdges = hoveredNode
+    ? new Set(
+        simEdges
+          .filter((e) => e.source === hoveredNode || e.target === hoveredNode)
+          .map((_, i) => i),
+      )
+    : null
+
+  const connectedNodes = hoveredNode
+    ? new Set(
+        simEdges
+          .filter((e) => e.source === hoveredNode || e.target === hoveredNode)
+          .flatMap((e) => [e.source, e.target]),
+      )
+    : null
+
+  return (
+    <svg
+      ref={svgRef}
+      viewBox={`0 0 ${W} ${H}`}
+      className="w-full aspect-[16/9]"
+      style={{ background: '#0a0a0f' }}
+    >
+      {/* Edges */}
+      {simEdges.map((e, i) => {
+        const src = nodeMap.get(e.source)
+        const tgt = nodeMap.get(e.target)
+        if (!src || !tgt) return null
+        const color = RELATION_COLORS[e.relation] ?? '#333'
+        const dimmed = highlightedEdges && !highlightedEdges.has(i)
+        return (
+          <line
+            key={i}
+            x1={src.x}
+            y1={src.y}
+            x2={tgt.x}
+            y2={tgt.y}
+            stroke={color}
+            strokeWidth={Math.min(3, 0.5 + e.weight * 0.3)}
+            opacity={dimmed ? 0.05 : 0.35}
+          />
+        )
+      })}
+
+      {/* Nodes */}
+      {simNodes.map((n) => {
+        const dimmed = connectedNodes && !connectedNodes.has(n.id) && n.id !== hoveredNode
+        const isHovered = n.id === hoveredNode
+        const r = isHovered ? 10 : 7
+        return (
+          <g
+            key={n.id}
+            onMouseEnter={() => setHoveredNode(n.id)}
+            onMouseLeave={() => setHoveredNode(null)}
+            style={{ cursor: 'pointer' }}
+          >
+            <circle
+              cx={n.x}
+              cy={n.y}
+              r={r}
+              fill={n.color}
+              opacity={dimmed ? 0.15 : 0.85}
+              stroke={isHovered ? '#fff' : 'none'}
+              strokeWidth={isHovered ? 2 : 0}
+            />
+            {/* Label — show on hover or if not too crowded */}
+            {(isHovered || simNodes.length <= 20) && (
+              <text
+                x={n.x}
+                y={n.y - r - 5}
+                fontSize={isHovered ? 12 : 10}
+                fill={dimmed ? '#333' : '#a1a1aa'}
+                textAnchor="middle"
+                fontFamily="'JetBrains Mono', monospace"
+              >
+                {n.label}
+              </text>
+            )}
+          </g>
+        )
+      })}
+    </svg>
   )
 }
