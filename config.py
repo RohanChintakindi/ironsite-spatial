@@ -12,18 +12,32 @@ FISHEYE_D = [-0.3, 0.1, 0.0, 0.0]
 FISHEYE_BALANCE = 0.5
 
 # --- Grounded SAM 2 ---
+GDINO_MODEL_ID = "IDEA-Research/grounding-dino-base"
 TEXT_PROMPT = (
-    "person . concrete block . cinder block . rebar . trowel . bucket . "
-    "hard hat . safety vest . gloved hand . scaffolding . crane . "
-    "mortar . pipe . wall . ladder . wheelbarrow"
+    "person . worker . concrete block . cinder block . brick . rebar . "
+    "trowel . bucket . hard hat . safety helmet . safety vest . "
+    "gloves . gloved hand . work gloves . scaffolding . crane . "
+    "mortar . pipe . wall . ladder . wheelbarrow . machinery"
 )
-DETECTION_THRESHOLD = 0.3
+DETECTION_THRESHOLD = 0.25
 REDETECT_EVERY = 50
-TRACK_CHUNK_SIZE = 10000  # process all frames at once (H200 has enough VRAM)
 
 # SAM2 model config
 SAM2_CHECKPOINT = "Grounded-SAM-2/checkpoints/sam2.1_hiera_small.pt"
 SAM2_CONFIG = "configs/sam2.1/sam2.1_hiera_s.yaml"
+
+# --- Analytic Taxonomy ---
+# Maps noisy detection labels to clean analytic categories
+ANALYTIC_TAXONOMY = {
+    "head protection": ["hard hat", "safety helmet", "hat"],
+    "hand protection": ["gloves", "gloved hand", "work gloves", "glove"],
+    "concrete block":  ["cinder block", "concrete block", "brick"],
+    "worker":          ["person", "worker"],
+}
+LABEL_TO_ANALYTIC = {}
+for _analytic, _fine_labels in ANALYTIC_TAXONOMY.items():
+    for _fl in _fine_labels:
+        LABEL_TO_ANALYTIC[_fl.lower()] = _analytic
 
 # --- VGGT-X ---
 VGGTX_DIR = "VGGT-X"
