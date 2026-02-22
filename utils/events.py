@@ -98,8 +98,8 @@ def extract_events(scene_graphs):
         # ---------------------------------------------------------------
         ppe_labels_present = set(o["label"].lower() for o in ppe_items)
         has_vest = any("vest" in l for l in ppe_labels_present)
-        has_helmet = any("hat" in l or "helmet" in l for l in ppe_labels_present)
-        has_gloves = any("glove" in l for l in ppe_labels_present)
+        has_helmet = any("hat" in l or "helmet" in l or l == "head protection" for l in ppe_labels_present)
+        has_gloves = any("glove" in l or l == "hand protection" for l in ppe_labels_present)
 
         ppe_per_frame.append({
             "frame_index": fi,

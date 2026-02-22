@@ -15,11 +15,11 @@ FISHEYE_BALANCE = 0.5
 GDINO_MODEL_ID = "IDEA-Research/grounding-dino-base"
 TEXT_PROMPT = (
     "person . worker . concrete block . cinder block . brick . rebar . "
-    "trowel . bucket . hard hat . safety helmet . safety vest . "
-    "gloves . gloved hand . work gloves . scaffolding . crane . "
+    "trowel . bucket . hard hat . helmet . safety vest . "
+    "gloves . gloved hand . scaffolding . crane . "
     "mortar . pipe . wall . ladder . wheelbarrow . machinery"
 )
-DETECTION_THRESHOLD = 0.25
+DETECTION_THRESHOLD = 0.20
 REDETECT_EVERY = 50
 TRACK_CHUNK_SIZE = 500  # frames per SAM2 tracking chunk
 
@@ -30,8 +30,9 @@ SAM2_CONFIG = "configs/sam2.1/sam2.1_hiera_s.yaml"
 # --- Analytic Taxonomy ---
 # Maps noisy detection labels to clean analytic categories
 ANALYTIC_TAXONOMY = {
-    "head protection": ["hard hat", "safety helmet", "hat"],
+    "head protection": ["hard hat", "safety helmet", "hat", "helmet"],
     "hand protection": ["gloves", "gloved hand", "work gloves", "glove"],
+    "safety vest":     ["safety vest", "safety"],  # "safety" is DINO partial match
     "concrete block":  ["cinder block", "concrete block", "brick"],
     "worker":          ["person", "worker"],
 }
