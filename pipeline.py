@@ -23,7 +23,7 @@ import numpy as np
 
 from config import *
 from utils.preprocess import extract_keyframes
-from utils.detection import run_grounded_sam2
+from utils.detection import run_dino_detections, run_sam2_tracking
 from utils.depth import run_full_3d_pipeline
 from utils.scene_graph import build_scene_graphs
 from utils.memory import SpatialMemory
@@ -109,32 +109,56 @@ def main():
         print(f"  Completed in {time.time() - t0:.1f}s")
 
     # ==========================================
-    # Step 2: Grounded SAM 2
+    # Step 2a: Grounding DINO — Object Detection
     # ==========================================
     print("\n" + "=" * 60)
-    print("STEP 2: Grounded SAM 2 — Detection + Segmentation + Tracking")
+    print("STEP 2a: Grounding DINO — Object Detection")
     print("=" * 60)
 
-    detection_cache = os.path.join(cache_dir, "detections.pkl")
+    dino_cache = os.path.join(cache_dir, "dino.pkl")
 
-    if not args.force and os.path.exists(detection_cache):
-        print("  SKIPPED — detections already cached")
-        with open(detection_cache, "rb") as f:
+    if not args.force and os.path.exists(dino_cache):
+        print("  SKIPPED — DINO detections already cached")
+        with open(dino_cache, "rb") as f:
+            dino_results = pickle.load(f)
+        print(f"  Loaded DINO results for {len(dino_results)} frames")
+    else:
+        t0 = time.time()
+        dino_results = run_dino_detections(
+            keyframes, device,
+            text_prompt=TEXT_PROMPT,
+            threshold=DETECTION_THRESHOLD,
+            redetect_every=REDETECT_EVERY,
+        )
+        with open(dino_cache, "wb") as f:
+            pickle.dump(dino_results, f)
+        print(f"  Completed in {time.time() - t0:.1f}s")
+
+    # ==========================================
+    # Step 2b: SAM2 — Segmentation + Tracking
+    # ==========================================
+    print("\n" + "=" * 60)
+    print("STEP 2b: SAM2 VideoPredictor — Segmentation + Tracking")
+    print("=" * 60)
+
+    tracking_cache = os.path.join(cache_dir, "tracking.pkl")
+
+    if not args.force and os.path.exists(tracking_cache):
+        print("  SKIPPED — SAM2 tracking already cached")
+        with open(tracking_cache, "rb") as f:
             cached = pickle.load(f)
         all_detections = cached["all_detections"]
         object_labels = cached["object_labels"]
-        print(f"  Loaded detections for {len(all_detections)} frames")
+        print(f"  Loaded tracking for {len(all_detections)} frames")
     else:
         t0 = time.time()
-        all_detections, object_labels = run_grounded_sam2(
-            keyframes, frames_dir, device,
-            text_prompt=TEXT_PROMPT,
-            threshold=DETECTION_THRESHOLD,
+        all_detections, object_labels = run_sam2_tracking(
+            keyframes, frames_dir, device, dino_results,
             redetect_every=REDETECT_EVERY,
             sam2_checkpoint=SAM2_CHECKPOINT,
             sam2_config=SAM2_CONFIG,
         )
-        with open(detection_cache, "wb") as f:
+        with open(tracking_cache, "wb") as f:
             pickle.dump({
                 "all_detections": all_detections,
                 "object_labels": object_labels,
