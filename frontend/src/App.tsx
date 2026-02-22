@@ -6,8 +6,10 @@ import Preprocessing from './components/chapters/Preprocessing'
 import Detection from './components/chapters/Detection'
 import Reconstruction from './components/chapters/Reconstruction'
 import SceneGraphs from './components/chapters/SceneGraphs'
+import SpatialGraphChapter from './components/chapters/SpatialGraphChapter'
 import Events from './components/chapters/Events'
 import SpatialMemory from './components/chapters/SpatialMemory'
+import VlmAnalysis from './components/chapters/VlmAnalysis'
 import Analytics from './components/chapters/Analytics'
 import Summary from './components/chapters/Summary'
 import { usePipelineWs } from './hooks/usePipelineWs'
@@ -27,9 +29,11 @@ export default function App() {
         <Detection />
         <Reconstruction />
         <SceneGraphs />
+        <SpatialGraphChapter />
         <Events />
         <SpatialMemory />
         <Analytics />
+        <VlmAnalysis />
         <Summary />
       </StoryContainer>
     </div>

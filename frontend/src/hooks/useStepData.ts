@@ -8,6 +8,7 @@ import {
   getTrajectory,
   getDashboardData,
   getSceneGraphs,
+  getGraphData,
   getEvents,
   getVlmAnalysis,
 } from '../api/client'
@@ -22,6 +23,7 @@ export function useStepData() {
   const setTrajectoryData = usePipelineStore((s) => s.setTrajectoryData)
   const setDashboardData = usePipelineStore((s) => s.setDashboardData)
   const setSceneGraphs = usePipelineStore((s) => s.setSceneGraphs)
+  const setGraphData = usePipelineStore((s) => s.setGraphData)
   const setEventsData = usePipelineStore((s) => s.setEventsData)
   const setVlmData = usePipelineStore((s) => s.setVlmData)
 
@@ -112,6 +114,19 @@ export function useStepData() {
     })
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [runId, steps.memory.status])
+
+  useEffect(() => {
+    if (!runId) return
+    fetchOnComplete('graph', async () => {
+      try {
+        const data = await getGraphData(runId)
+        setGraphData(data as never)
+      } catch (e) {
+        console.error('Failed to fetch graph data:', e)
+      }
+    })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [runId, steps.graph.status])
 
   useEffect(() => {
     if (!runId) return

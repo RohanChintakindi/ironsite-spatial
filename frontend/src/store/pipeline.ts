@@ -51,6 +51,7 @@ interface PipelineStore {
   dashboardData: DashboardData | null
   sceneGraphs: SceneGraph[] | null
   rawDetections: RawDetectionData | null
+  graphData: { nodes: { id: string; type: string; label: string; color: string; [k: string]: unknown }[]; edges: { source: string; target: string; relation: string; weight: number; color: string }[]; stats?: { total_nodes: number; total_edges: number; node_types: Record<string, number>; edge_types: Record<string, number> } } | null
   eventsData: EventsData | null
   vlmData: Record<string, unknown> | null
 
@@ -66,6 +67,7 @@ interface PipelineStore {
   setTrajectoryData: (d: TrajectoryData) => void
   setDashboardData: (d: DashboardData) => void
   setSceneGraphs: (d: SceneGraph[]) => void
+  setGraphData: (d: PipelineStore['graphData']) => void
   setEventsData: (d: EventsData) => void
   setVlmData: (d: Record<string, unknown>) => void
   reset: () => void
@@ -91,6 +93,7 @@ export const usePipelineStore = create<PipelineStore>((set) => ({
   preprocessData: null,
   dinoData: null,
   rawDetections: null,
+  graphData: null,
   detections: null,
   trajectoryData: null,
   dashboardData: null,
@@ -115,6 +118,7 @@ export const usePipelineStore = create<PipelineStore>((set) => ({
   setTrajectoryData: (d) => set({ trajectoryData: d }),
   setDashboardData: (d) => set({ dashboardData: d }),
   setSceneGraphs: (d) => set({ sceneGraphs: d }),
+  setGraphData: (d) => set({ graphData: d }),
   setEventsData: (d) => set({ eventsData: d }),
   setVlmData: (d) => set({ vlmData: d }),
   reset: () =>
@@ -126,6 +130,7 @@ export const usePipelineStore = create<PipelineStore>((set) => ({
       preprocessData: null,
       dinoData: null,
       rawDetections: null,
+      graphData: null,
       detections: null,
       trajectoryData: null,
       dashboardData: null,
