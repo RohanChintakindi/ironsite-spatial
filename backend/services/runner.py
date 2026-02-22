@@ -405,6 +405,7 @@ def _step_vlm(config: dict, data: dict) -> dict:
     }
 
     if skip_vlm or not grok_key:
+        data["vlm_skipped"] = True
         return {"skipped": True, "reason": "skip_vlm flag or no grok_key",
                 "events_available": True}
 
@@ -431,6 +432,7 @@ def _step_vlm(config: dict, data: dict) -> dict:
     )
 
     data["vlm_analysis"] = analysis
+    data["vlm_skipped"] = False
 
     return {
         "skipped": False,
