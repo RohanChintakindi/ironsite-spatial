@@ -2,14 +2,18 @@
 Ironsite Spatial -- FastAPI Backend
 ===================================
 Serves the spatial awareness pipeline via REST + WebSocket.
+Also serves the built frontend static files.
 """
 
 import logging
+import os
 from contextlib import asynccontextmanager
 from typing import Any
 
 from fastapi import FastAPI, WebSocket
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
+from fastapi.responses import FileResponse
 
 from routers import pipeline, results, memory, ws
 
@@ -86,3 +90,16 @@ app.include_router(ws.router, tags=["websocket"])
 @app.get("/health")
 async def health_check():
     return {"status": "ok"}
+
+
+# --- Serve frontend static files ---
+FRONTEND_DIST = os.path.join(os.path.dirname(__file__), os.pardir, "frontend", "dist")
+
+if os.path.isdir(FRONTEND_DIST):
+    # Serve static assets (JS, CSS, images)
+    app.mount("/assets", StaticFiles(directory=os.path.join(FRONTEND_DIST, "assets")), name="static")
+
+    # Catch-all: serve index.html for any non-API route (SPA routing)
+    @app.get("/{full_path:path}")
+    async def serve_spa(full_path: str):
+        return FileResponse(os.path.join(FRONTEND_DIST, "index.html"))
