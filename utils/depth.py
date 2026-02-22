@@ -195,9 +195,17 @@ def load_depth_maps(depth_dir, num_keyframes):
             depth = depth[..., 0]
 
         # Match depth file to image name
-        img_name = (df
-                    .replace("_depth.npy", ".jpg")
-                    .replace(".npy", ".jpg"))
+        # VGGT-X saves as "{image_name}.npy" (e.g. 000000.jpg.npy)
+        # FastVGGT saves as "{stem}_depth.npy" (e.g. 000000_depth.npy)
+        if df.endswith(".jpg.npy") or df.endswith(".png.npy"):
+            # VGGT-X format: 000000.jpg.npy → 000000.jpg
+            img_name = df[:-4]  # strip .npy
+        elif "_depth.npy" in df:
+            # FastVGGT format: 000000_depth.npy → 000000.jpg
+            img_name = df.replace("_depth.npy", ".jpg")
+        else:
+            # Fallback: 000000.npy → 000000.jpg
+            img_name = df.replace(".npy", ".jpg")
         depth_map_cache[img_name] = depth
 
     print(f"Loaded {len(depth_map_cache)} depth maps")
