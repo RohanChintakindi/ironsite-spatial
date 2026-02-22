@@ -19,7 +19,7 @@ def load_models(device, sam2_checkpoint, sam2_config):
     from transformers import AutoProcessor, AutoModelForZeroShotObjectDetection
 
     gdino_id = "IDEA-Research/grounding-dino-tiny"
-    gd_processor = AutoProcessor.from_pretrained(gdino_id)
+    gd_processor = AutoProcessor.from_pretrained(gdino_id, use_fast=False)
     gd_model = AutoModelForZeroShotObjectDetection.from_pretrained(gdino_id).to(device)
 
     sam2_model = build_sam2(sam2_config, sam2_checkpoint, device=device)
@@ -54,7 +54,7 @@ def run_grounded_sam2(keyframes, frames_dir, device, text_prompt, threshold,
 
     # Load Grounding DINO
     gdino_id = "IDEA-Research/grounding-dino-tiny"
-    gd_processor = AutoProcessor.from_pretrained(gdino_id)
+    gd_processor = AutoProcessor.from_pretrained(gdino_id, use_fast=False)
     gd_model = AutoModelForZeroShotObjectDetection.from_pretrained(gdino_id).to(device)
 
     # Load SAM2
