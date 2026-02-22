@@ -107,16 +107,16 @@ def run_sam2_tracking(keyframes, frames_dir, device, dino_results,
         chunk_len = len(chunk_files)
         print(f"  Chunk {chunk_idx + 1}/{num_chunks}: frames {chunk_start}-{chunk_end - 1} ({chunk_len} frames)")
 
-        # Symlink only this chunk's frames to a temp dir
-        tmp_dir = os.path.join(os.path.dirname(frames_dir), f"_chunk_tmp_{chunk_idx}")
-        os.makedirs(tmp_dir, exist_ok=True)
+        # Copy only this chunk's frames to a temp dir
+        tmp_dir = os.path.join(os.path.abspath(os.path.dirname(frames_dir)), f"_chunk_tmp_{chunk_idx}")
+        if os.path.exists(tmp_dir):
+            shutil.rmtree(tmp_dir)
+        os.makedirs(tmp_dir)
+        abs_frames_dir = os.path.abspath(frames_dir)
         for local_idx, fname in enumerate(chunk_files):
-            src = os.path.join(frames_dir, fname)
+            src = os.path.join(abs_frames_dir, fname)
             dst = os.path.join(tmp_dir, f"{local_idx:06d}.jpg")
-            try:
-                os.link(src, dst)  # hard link (no extra disk space)
-            except OSError:
-                shutil.copy2(src, dst)  # fallback to copy
+            os.link(src, dst)
 
         video_predictor = build_sam2_video_predictor(sam2_config, sam2_checkpoint, device=device)
         inference_state = video_predictor.init_state(video_path=tmp_dir)
