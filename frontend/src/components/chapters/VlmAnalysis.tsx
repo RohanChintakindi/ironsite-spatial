@@ -165,7 +165,7 @@ export default function VlmAnalysis() {
   const eventsData = usePipelineStore((s) => s.eventsData)
   const [showRaw, setShowRaw] = useState(false)
 
-  if (!vlmData) {
+  if (!vlmData && !eventsData) {
     return (
       <Chapter
         step="vlm"
@@ -177,10 +177,10 @@ export default function VlmAnalysis() {
     )
   }
 
-  const analysis = (vlmData.analysis ?? {}) as Record<string, unknown>
-  const isVlmMode = 'summary' in analysis && typeof analysis.summary === 'object'
-  const skipped = vlmData.skipped === true || !isVlmMode
+  const analysis = (vlmData?.analysis ?? {}) as Record<string, unknown>
+  const isVlmMode = vlmData != null && 'summary' in analysis && typeof analysis.summary === 'object'
 
+  // Pull from eventsData first (available earlier), vlmData/analysis as override
   const productionPct = isVlmMode
     ? ((analysis.summary as Record<string, number>)?.production_pct ?? 0)
     : ((analysis.production_pct as number) ?? eventsData?.stats.production_pct ?? 0)
@@ -200,9 +200,9 @@ export default function VlmAnalysis() {
 
   const totalTimeSec =
     (analysis.total_time_sec as number) ?? eventsData?.stats.total_time_sec ?? 0
-  const distanceM = skipped
-    ? ((analysis.distance_traveled_m as number) ?? eventsData?.stats.distance_traveled_m ?? 0)
-    : (((analysis.productivity as Record<string, unknown>)?.distance_traveled_m as number) ?? 0)
+  const distanceM = isVlmMode
+    ? (((analysis.productivity as Record<string, unknown>)?.distance_traveled_m as number) ?? 0)
+    : ((analysis.distance_traveled_m as number) ?? eventsData?.stats.distance_traveled_m ?? 0)
   const blockInteractions =
     (analysis.block_interactions as number) ?? eventsData?.stats.block_interactions ?? 0
   const toolPickups =
@@ -211,7 +211,7 @@ export default function VlmAnalysis() {
   const timeline = (analysis.activity_timeline as {
     start: string; end: string; activity: string; description?: string
     duration_sec?: number; num_frames?: number; start_sec?: number; end_sec?: number
-  }[]) ?? []
+  }[]) ?? eventsData?.timeline ?? []
 
   const ppe = eventsData?.ppe_report
   const vlmSafety = analysis.safety as Record<string, unknown> | undefined

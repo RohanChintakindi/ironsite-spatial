@@ -142,7 +142,7 @@ def run_sam2_tracking(keyframes, frames_dir, device, dino_results,
                     continue
                 local_re_idx = global_re_idx - chunk_start
                 rd = dino_results[global_re_idx]
-                re_next_id = max(object_labels.keys()) + 1
+                re_next_id = (max(object_labels.keys()) + 1) if object_labels else 0
                 for nb, nl in zip(rd["boxes"], rd["labels"]):
                     object_labels[re_next_id] = nl
                     video_predictor.add_new_points_or_box(
