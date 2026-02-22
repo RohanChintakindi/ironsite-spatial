@@ -56,14 +56,32 @@ def load_images(image_dir, max_size=1024):
 
 def run_inference(model, images_tensor, device="cuda"):
     """Run FastVGGT inference, return predictions dict."""
+    import threading
+
     # FastVGGT expects (1, N, 3, H, W) batch
     images_batch = images_tensor.unsqueeze(0).to(device).to(torch.bfloat16)
+    n_frames = images_tensor.shape[0]
+    vram_gb = torch.cuda.get_device_properties(0).total_memory / 1e9
 
-    print(f"Running FastVGGT inference on {images_tensor.shape[0]} frames...")
+    print(f"Running FastVGGT inference on {n_frames} frames...")
+    print(f"  This is one big GPU operation — no per-frame progress.")
+    print(f"  Estimated ~{n_frames // 5}s on {vram_gb:.0f}GB GPU. Printing heartbeat every 30s...")
     t0 = time.time()
+
+    # Heartbeat thread so you know it's not frozen
+    done = threading.Event()
+    def heartbeat():
+        while not done.wait(30):
+            elapsed = time.time() - t0
+            mem = torch.cuda.memory_allocated() / 1e9
+            print(f"  ... still running ({elapsed:.0f}s elapsed, {mem:.1f}GB VRAM used)")
+    hb = threading.Thread(target=heartbeat, daemon=True)
+    hb.start()
 
     with torch.no_grad():
         predictions = model(images_batch)
+
+    done.set()
 
     elapsed = time.time() - t0
     print(f"Inference complete in {elapsed:.1f}s")
