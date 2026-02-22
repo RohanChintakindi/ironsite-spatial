@@ -41,7 +41,7 @@ for _analytic, _fine_labels in ANALYTIC_TAXONOMY.items():
         LABEL_TO_ANALYTIC[_fl.lower()] = _analytic
 
 # --- FastVGGT ---
-FASTVGGT_MERGING = 6       # token merging block (6=recommended, 4x speedup)
+FASTVGGT_MERGING = 6       # token merging at block 6 (recommended — ~4x speedup)
 FASTVGGT_MERGE_RATIO = 0.9 # how aggressively to merge tokens (0.9 = 4x speedup)
 FASTVGGT_DEPTH_CONF = 3.0  # depth confidence threshold
 FASTVGGT_MAX_POINTS = 100000

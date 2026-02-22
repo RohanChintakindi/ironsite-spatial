@@ -17,16 +17,25 @@ FASTVGGT_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__fi
 sys.path.insert(0, FASTVGGT_DIR)
 
 
-def load_images(image_dir, max_size=1024):
-    """Load images from directory, return tensor + paths."""
+def load_images(image_dir):
+    """Load images and preprocess using FastVGGT's own function.
+
+    Returns:
+        vgg_input: tensor (N, 3, H, W) preprocessed for the model
+        paths: list of image file paths
+        images_np: original images as numpy (N, H, W, 3) for COLMAP colors
+        patch_width: patch grid width for token merging
+        patch_height: patch grid height for token merging
+    """
     from PIL import Image
-    import torchvision.transforms as T
+    from vggt.utils.eval_utils import get_vgg_input_imgs
 
     paths = sorted(glob.glob(os.path.join(image_dir, "*.jpg")))
     if not paths:
         paths = sorted(glob.glob(os.path.join(image_dir, "*.png")))
     print(f"Found {len(paths)} images in {image_dir}")
 
+    # Load original images as RGB numpy arrays
     images = []
     for p in paths:
         img = Image.open(p).convert("RGB")
@@ -34,32 +43,23 @@ def load_images(image_dir, max_size=1024):
 
     images_np = np.stack(images)  # (N, H, W, 3)
     N, H, W, C = images_np.shape
+    print(f"Original frame size: {W}x{H}")
 
-    # Resize to 518x518 (standard DINOv2 size, 37*14=518)
-    # Token merging requires square images at this resolution
-    TARGET_SIZE = 518
-    if H != TARGET_SIZE or W != TARGET_SIZE:
-        print(f"Resizing frames: {W}x{H} -> {TARGET_SIZE}x{TARGET_SIZE}")
-        import cv2
-        resized = []
-        for img in images_np:
-            resized.append(cv2.resize(img, (TARGET_SIZE, TARGET_SIZE), interpolation=cv2.INTER_LINEAR))
-        images_np = np.stack(resized)
+    # Use FastVGGT's own preprocessing (correct resizing + patch dims)
+    vgg_input, patch_width, patch_height = get_vgg_input_imgs(images_np)
+    print(f"Model input: {vgg_input.shape[3]}x{vgg_input.shape[2]} | "
+          f"patch grid: {patch_width}x{patch_height}")
 
-    # Normalize to [0, 1]
-    images_tensor = torch.from_numpy(images_np).float() / 255.0
-    images_tensor = images_tensor.permute(0, 3, 1, 2)  # (N, 3, H, W)
-
-    return images_tensor, paths, images_np
+    return vgg_input, paths, images_np, patch_width, patch_height
 
 
-def run_inference(model, images_tensor, device="cuda"):
+def run_inference(model, vgg_input, device="cuda"):
     """Run FastVGGT inference, return predictions dict."""
     import threading
 
     # FastVGGT expects (1, N, 3, H, W) batch
-    images_batch = images_tensor.unsqueeze(0).to(device).to(torch.bfloat16)
-    n_frames = images_tensor.shape[0]
+    images_batch = vgg_input.unsqueeze(0).to(device).to(torch.bfloat16)
+    n_frames = vgg_input.shape[0]
     vram_gb = torch.cuda.get_device_properties(0).total_memory / 1e9
 
     print(f"Running FastVGGT inference on {n_frames} frames...")
@@ -301,11 +301,17 @@ def main():
     model = model.cuda().eval().to(torch.bfloat16)
     print("FastVGGT model loaded")
 
-    # Load images
-    images_tensor, image_paths, images_np = load_images(image_dir)
+    # Load images (uses FastVGGT's own preprocessing for correct patch dims)
+    vgg_input, image_paths, images_np, patch_width, patch_height = load_images(image_dir)
+
+    # Update model's patch dimensions for token merging
+    if args.merging > 0:
+        model.update_patch_dimensions(patch_width, patch_height)
+        print(f"Token merging enabled at block {args.merging} "
+              f"(ratio={args.merge_ratio}, patches={patch_width}x{patch_height})")
 
     # Run inference
-    predictions = run_inference(model, images_tensor)
+    predictions = run_inference(model, vgg_input)
 
     # Save depth maps
     save_depth_maps(predictions, image_paths, args.output_dir, args.depth_conf_thresh)
