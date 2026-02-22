@@ -6,5 +6,4 @@ VGGT-X/
 vggt/
 *.mp4
 *.npy
-scene/
 .env

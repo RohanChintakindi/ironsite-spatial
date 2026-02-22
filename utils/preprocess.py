@@ -25,7 +25,7 @@ def get_undistortion_maps(w, h, k_scale=0.8, D=(-0.3, 0.1, 0.0, 0.0), balance=0.
 
 
 def extract_keyframes(video_path, output_dir, interval=10, k_scale=0.8,
-                      D=(-0.3, 0.1, 0.0, 0.0), balance=0.5):
+                      D=(-0.3, 0.1, 0.0, 0.0), balance=0.5, max_frames=0):
     os.makedirs(output_dir, exist_ok=True)
 
     cap = cv2.VideoCapture(video_path)
@@ -46,6 +46,8 @@ def extract_keyframes(video_path, output_dir, interval=10, k_scale=0.8,
     while True:
         ret, frame = cap.read()
         if not ret:
+            break
+        if max_frames > 0 and len(keyframes) >= max_frames:
             break
         if frame_idx % interval == 0:
             undistorted = cv2.remap(frame, map1, map2, cv2.INTER_LINEAR)

@@ -1,32 +1,34 @@
 #!/bin/bash
 # ============================================
 # Ironsite Spatial Pipeline — Setup Script
-# Run this once on a fresh GPU instance (Vast.ai, Colab, etc.)
+# Run once on a fresh GPU instance (Vast.ai, etc.)
 # ============================================
 set -e
 
 echo "=== Installing Python dependencies ==="
 pip install -q torch torchvision torchaudio
-pip install -q transformers supervision opencv-python-headless numpy plotly matplotlib huggingface_hub openai scipy Pillow
+pip install -q transformers supervision opencv-python-headless numpy plotly matplotlib
+pip install -q huggingface_hub openai scipy Pillow
+pip install -q pycolmap
+pip install -q faiss-gpu 2>/dev/null || pip install -q faiss-cpu
 
 echo "=== Installing Grounded SAM 2 ==="
 if [ ! -d "Grounded-SAM-2" ]; then
     git clone https://github.com/IDEA-Research/Grounded-SAM-2.git
     cd Grounded-SAM-2
     SAM2_BUILD_CUDA=0 pip install -e ".[notebooks]" -q
-    # Grounding DINO loaded from HuggingFace Transformers (no CUDA build needed)
     cd checkpoints && bash download_ckpts.sh && cd ..
     cd ..
 else
     echo "Grounded-SAM-2 already installed"
 fi
 
-echo "=== Installing VGGT ==="
-if [ ! -d "vggt" ]; then
-    git clone https://github.com/facebookresearch/vggt.git
-    pip install -e vggt -q
+echo "=== Installing VGGT-X ==="
+if [ ! -d "VGGT-X" ]; then
+    git clone --recursive https://github.com/Linketic/VGGT-X.git
+    pip install -q -r VGGT-X/requirements.txt
 else
-    echo "VGGT already installed"
+    echo "VGGT-X already installed"
 fi
 
 echo "=== GPU Check ==="

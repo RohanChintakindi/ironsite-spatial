@@ -4,11 +4,11 @@ Ironsite Spatial Awareness Pipeline
 Processes body cam video from construction workers and produces
 structured spatial data for LLM-based activity analysis.
 
-Usage:
-    python pipeline.py --video path/to/video.mp4 [--grok-key YOUR_KEY]
-
 Pipeline:
-    Video → Undistort → Keyframes → Grounded SAM 2 → VGGT → Scene Graphs → VLM Reasoning
+    Video → Undistort → Keyframes → Grounded SAM 2 → VGGT-X → Scene Graphs → FAISS Memory → VLM
+
+Usage:
+    python pipeline.py --video path/to/video.mp4 [--grok-key YOUR_KEY] [--skip-vlm]
 """
 
 import argparse
@@ -22,8 +22,9 @@ import numpy as np
 from config import *
 from utils.preprocess import extract_keyframes
 from utils.detection import run_grounded_sam2
-from utils.depth import run_vggt
+from utils.depth import run_full_3d_pipeline
 from utils.scene_graph import build_scene_graphs
+from utils.memory import SpatialMemory
 from utils.vlm import run_vlm_analysis
 from utils.visualize import (
     plot_annotated_frames, plot_3d_scene, plot_trajectory_topdown,
@@ -37,10 +38,11 @@ def main():
     parser.add_argument("--grok-key", default=None, help="xAI/Grok API key for VLM reasoning")
     parser.add_argument("--output", default="output", help="Output directory")
     parser.add_argument("--skip-vlm", action="store_true", help="Skip VLM reasoning step")
-    parser.add_argument("--keyframe-interval", type=int, default=None,
-                        help=f"Override keyframe interval (default: {KEYFRAME_INTERVAL})")
+    parser.add_argument("--keyframe-interval", type=int, default=None)
     parser.add_argument("--chunk-size", type=int, default=None,
-                        help=f"Override VGGT chunk size (default: {VGGT_CHUNK_SIZE})")
+                        help=f"VGGT-X chunk size (default: {VGGTX_CHUNK_SIZE})")
+    parser.add_argument("--max-frames", type=int, default=None,
+                        help="Max keyframes to extract (0=unlimited)")
     args = parser.parse_args()
 
     if not os.path.exists(args.video):
@@ -53,12 +55,16 @@ def main():
         vram = torch.cuda.get_device_properties(0).total_memory / 1e9
         print(f"GPU: {gpu_name} | VRAM: {vram:.1f} GB")
     else:
-        print("WARNING: No GPU — this will be very slow!")
+        print("WARNING: No GPU!")
 
     os.makedirs(args.output, exist_ok=True)
     kf_interval = args.keyframe_interval or KEYFRAME_INTERVAL
-    chunk_size = args.chunk_size or VGGT_CHUNK_SIZE
-    frames_dir = os.path.join(args.output, "frames")
+    chunk_size = args.chunk_size or VGGTX_CHUNK_SIZE
+    max_frames = args.max_frames if args.max_frames is not None else MAX_FRAMES
+
+    # Scene directory for VGGT-X (expects images/ subdirectory)
+    scene_dir = os.path.join(args.output, "scene")
+    frames_dir = os.path.join(scene_dir, "images")
 
     # ==========================================
     # Step 1: Video Preprocessing
@@ -70,12 +76,13 @@ def main():
 
     keyframes, timestamps, frame_indices, fps, w, h = extract_keyframes(
         args.video, frames_dir, interval=kf_interval,
-        k_scale=FISHEYE_K_SCALE, D=FISHEYE_D, balance=FISHEYE_BALANCE
+        k_scale=FISHEYE_K_SCALE, D=FISHEYE_D, balance=FISHEYE_BALANCE,
+        max_frames=max_frames,
     )
     print(f"  Completed in {time.time() - t0:.1f}s")
 
     # ==========================================
-    # Step 2: Grounded SAM 2 (Detect + Segment + Track)
+    # Step 2: Grounded SAM 2
     # ==========================================
     print("\n" + "=" * 60)
     print("STEP 2: Grounded SAM 2 — Detection + Segmentation + Tracking")
@@ -93,51 +100,67 @@ def main():
     print(f"  Completed in {time.time() - t0:.1f}s")
 
     # ==========================================
-    # Step 3: VGGT (Depth + 3D + Trajectory)
+    # Step 3: VGGT-X (3D Reconstruction)
     # ==========================================
     print("\n" + "=" * 60)
-    print("STEP 3: VGGT — Depth + 3D Reconstruction + Trajectory")
+    print("STEP 3: VGGT-X — 3D Reconstruction + Depth + Trajectory")
     print("=" * 60)
     t0 = time.time()
 
-    depth_maps, cam_positions_smooth, cam_positions_raw, point_cloud = run_vggt(
-        keyframes, device,
-        model_name=VGGT_MODEL,
+    recon_data = run_full_3d_pipeline(
+        scene_dir=scene_dir,
+        vggtx_dir=VGGTX_DIR,
         chunk_size=chunk_size,
+        max_query_pts=VGGTX_MAX_QUERY_PTS,
+        shared_camera=VGGTX_SHARED_CAMERA,
+        use_ga=VGGTX_USE_GA,
+        save_depth=VGGTX_SAVE_DEPTH,
+        num_keyframes=len(keyframes),
     )
-
-    total_dist = 0.0
-    if len(cam_positions_smooth) > 1:
-        total_dist = float(np.sum(np.linalg.norm(np.diff(cam_positions_smooth, axis=0), axis=1)))
-    print(f"  Worker distance traveled: {total_dist:.1f}m")
     print(f"  Completed in {time.time() - t0:.1f}s")
 
     # ==========================================
     # Step 4: Scene Graph Builder
     # ==========================================
     print("\n" + "=" * 60)
-    print("STEP 4: Building Scene Graphs")
+    print("STEP 4: Building Scene Graphs (COLMAP world coordinates)")
     print("=" * 60)
     t0 = time.time()
 
-    # Estimate camera intrinsics from frame dimensions
-    fx = fy = w * FISHEYE_K_SCALE
-    cx, cy = w / 2, h / 2
-
     scene_graphs = build_scene_graphs(
-        keyframes, all_detections, depth_maps, cam_positions_smooth,
-        timestamps, frame_indices, fx, fy, cx, cy
+        keyframes, all_detections, recon_data, timestamps, frame_indices
     )
     print(f"  Completed in {time.time() - t0:.1f}s")
 
     # ==========================================
-    # Step 5: VLM Reasoning
+    # Step 5: FAISS Spatial Memory
+    # ==========================================
+    print("\n" + "=" * 60)
+    print("STEP 5: Building Spatial Memory (FAISS)")
+    print("=" * 60)
+
+    memory_dir = os.path.join(args.output, "memory_store")
+    memory = SpatialMemory(memory_dir)
+    memory.ingest(scene_graphs, args.video)
+    memory.save()
+
+    # Demo queries
+    print("\nSample queries:")
+    blocks = memory.query_label("block")
+    print(f"  Frames with blocks: {len(blocks)}")
+    close = memory.query_depth_range(0.5, 3.0)
+    print(f"  Objects in work range (0.5-3m): {len(close)} frames")
+    placements = memory.query_proximity("person", "block", max_m=2.0)
+    print(f"  Person near block (<2m): {len(placements)} frames")
+
+    # ==========================================
+    # Step 6: VLM Reasoning
     # ==========================================
     analysis_json = {}
     if not args.skip_vlm:
         if args.grok_key:
             print("\n" + "=" * 60)
-            print("STEP 5: VLM Reasoning via Grok")
+            print("STEP 6: VLM Reasoning via Grok")
             print("=" * 60)
             t0 = time.time()
 
@@ -149,34 +172,41 @@ def main():
             )
             print(f"  Completed in {time.time() - t0:.1f}s")
         else:
-            print("\nSkipping VLM reasoning (no --grok-key provided)")
+            print("\nSkipping VLM (no --grok-key). Add it to get activity analysis.")
     else:
-        print("\nSkipping VLM reasoning (--skip-vlm)")
+        print("\nSkipping VLM (--skip-vlm)")
 
     # ==========================================
-    # Step 6: Visualization & Export
+    # Step 7: Visualization & Export
     # ==========================================
     print("\n" + "=" * 60)
-    print("STEP 6: Visualization & Export")
+    print("STEP 7: Visualization & Export")
     print("=" * 60)
 
-    plot_annotated_frames(keyframes, scene_graphs, depth_maps, timestamps, args.output)
-    plot_3d_scene(point_cloud, cam_positions_smooth, args.output)
-    plot_trajectory_topdown(cam_positions_smooth, args.output)
+    depth_maps_list = []
+    for i in range(len(keyframes)):
+        fname = f"{i:06d}.jpg"
+        depth_maps_list.append(recon_data["depth_map_cache"].get(fname))
+
+    plot_annotated_frames(keyframes, scene_graphs, depth_maps_list, timestamps, args.output)
+    plot_3d_scene(recon_data["points_xyz"], recon_data["cam_positions_smooth"], args.output)
+    plot_trajectory_topdown(recon_data["cam_positions_smooth"], args.output)
     plot_object_frequency(scene_graphs, args.output)
 
     if analysis_json:
         plot_activity_timeline(analysis_json, args.output)
 
     summary = export_results(
-        scene_graphs, analysis_json, cam_positions_smooth, object_labels,
-        timestamps, args.video, args.output
+        scene_graphs, analysis_json, recon_data["cam_positions_smooth"],
+        object_labels, timestamps, args.video, args.output
     )
 
     print("\n" + "=" * 60)
     print("PIPELINE COMPLETE")
     print("=" * 60)
     print(f"Results in: {os.path.abspath(args.output)}/")
+    print(f"\nQuery the spatial memory:")
+    print(f"  python -c \"from utils.memory import SpatialMemory; m = SpatialMemory('{memory_dir}'); print(m.stats())\"")
 
 
 if __name__ == "__main__":

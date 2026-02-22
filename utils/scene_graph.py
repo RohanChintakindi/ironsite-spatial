@@ -1,48 +1,54 @@
 """
-Scene Graph Builder: fuse detections + depth + poses into structured spatial data.
+Scene Graph Builder: fuse Grounded SAM 2 detections + VGGT-X 3D into structured spatial data.
+Uses COLMAP world coordinates for globally consistent 3D positions.
 """
 
 import numpy as np
 import json
+from utils.depth import get_depth_at_bbox, unproject_to_world
 
 
-def pixel_to_3d(u, v, depth, fx, fy, cx, cy):
-    x = (u - cx) * depth / fx
-    y = (v - cy) * depth / fy
-    return [round(float(x), 2), round(float(y), 2), round(float(depth), 2)]
-
-
-def compute_spatial_relations(objects, near_thresh=1.0, far_thresh=3.0,
-                               dir_thresh_x=50, dir_thresh_y=30):
+def compute_spatial_relations(objects, near_thresh=1.0, far_thresh=3.0):
+    """Compute pairwise spatial relations using 3D world positions."""
     relations = []
     for i, a in enumerate(objects):
         for j, b in enumerate(objects):
             if i >= j:
                 continue
 
-            avg_depth = (a["depth_m"] + b["depth_m"]) / 2
-            cx_a = (a["bbox"][0] + a["bbox"][2]) / 2
-            cx_b = (b["bbox"][0] + b["bbox"][2]) / 2
-            cy_a = (a["bbox"][1] + a["bbox"][3]) / 2
-            cy_b = (b["bbox"][1] + b["bbox"][3]) / 2
+            pa = np.array(a["position_3d"])
+            pb = np.array(b["position_3d"])
 
-            # Proximity
-            if avg_depth < near_thresh:
-                relations.append([a["id_str"], "very_near", b["id_str"]])
-            elif avg_depth < far_thresh:
-                relations.append([a["id_str"], "near", b["id_str"]])
+            # Skip if either has no valid 3D position
+            if np.all(pa == 0) or np.all(pb == 0):
+                continue
+
+            dist_3d = float(np.linalg.norm(pa - pb))
+            dx = float(pb[0] - pa[0])  # world X difference
+            dy = float(pb[1] - pa[1])  # world Y difference (vertical)
+
+            # Proximity (using actual 3D distance)
+            if dist_3d < near_thresh:
+                relations.append([a["id_str"], "very_near", b["id_str"],
+                                  {"distance_m": round(dist_3d, 2)}])
+            elif dist_3d < far_thresh:
+                relations.append([a["id_str"], "near", b["id_str"],
+                                  {"distance_m": round(dist_3d, 2)}])
             else:
-                relations.append([a["id_str"], "far", b["id_str"]])
+                relations.append([a["id_str"], "far", b["id_str"],
+                                  {"distance_m": round(dist_3d, 2)}])
 
-            # Direction
-            if cx_a < cx_b - dir_thresh_x:
+            # Horizontal direction (world X axis)
+            if dx > 0.3:
                 relations.append([a["id_str"], "left_of", b["id_str"]])
-            elif cx_a > cx_b + dir_thresh_x:
+            elif dx < -0.3:
                 relations.append([a["id_str"], "right_of", b["id_str"]])
-            if cy_a < cy_b - dir_thresh_y:
-                relations.append([a["id_str"], "above", b["id_str"]])
-            elif cy_a > cy_b + dir_thresh_y:
+
+            # Vertical (world Y axis)
+            if dy > 0.3:
                 relations.append([a["id_str"], "below", b["id_str"]])
+            elif dy < -0.3:
+                relations.append([a["id_str"], "above", b["id_str"]])
 
             # Contact (mask overlap)
             if a.get("mask") is not None and b.get("mask") is not None:
@@ -70,24 +76,37 @@ def detect_hand_state(objects, overlap_thresh=0.2, depth_thresh=0.5):
             overlap_x = max(0, min(hx2, ox2) - max(hx1, ox1))
             overlap_y = max(0, min(hy2, oy2) - max(hy1, oy1))
             if (overlap_x * overlap_y) / hand_area > overlap_thresh:
-                if abs(hand["depth_m"] - obj["depth_m"]) < depth_thresh:
+                # Check 3D distance if available
+                pa = np.array(hand["position_3d"])
+                pb = np.array(obj["position_3d"])
+                if not np.all(pa == 0) and not np.all(pb == 0):
+                    if np.linalg.norm(pa - pb) < depth_thresh:
+                        hand_state[hand["id_str"]] = obj["id_str"]
+                        break
+                elif abs(hand["depth_m"] - obj["depth_m"]) < depth_thresh:
                     hand_state[hand["id_str"]] = obj["id_str"]
                     break
     return hand_state
 
 
-def build_scene_graphs(keyframes, all_detections, depth_maps, cam_poses_dict,
-                       timestamps, frame_indices, fx, fy, cx, cy, config=None):
-    from config import (NEAR_THRESHOLD, FAR_THRESHOLD, HAND_OVERLAP_THRESHOLD,
-                        HAND_DEPTH_THRESHOLD, DIRECTION_THRESHOLD_X, DIRECTION_THRESHOLD_Y)
+def build_scene_graphs(keyframes, all_detections, recon_data, timestamps, frame_indices):
+    """Build scene graphs using VGGT-X COLMAP world coordinates."""
+    from config import NEAR_THRESHOLD, FAR_THRESHOLD, HAND_OVERLAP_THRESHOLD, HAND_DEPTH_THRESHOLD
+
+    intrinsics = recon_data["intrinsics"]
+    image_data = recon_data["image_data"]
+    depth_map_cache = recon_data["depth_map_cache"]
 
     img_h, img_w = keyframes[0].shape[:2]
-    frame_cx, frame_cy = img_w / 2, img_h / 2
-
     scene_graphs = []
 
     for i in range(len(keyframes)):
-        dm = depth_maps[i] if i < len(depth_maps) and depth_maps[i] is not None else None
+        fname = f"{i:06d}.jpg"
+
+        # Get camera data for this frame
+        cam_data = image_data.get(fname, None)
+        extrinsics = cam_data["extrinsics"] if cam_data else None
+        cam_center = cam_data["cam_center"].tolist() if cam_data else None
 
         objects = []
         for det in all_detections[i]:
@@ -95,29 +114,20 @@ def build_scene_graphs(keyframes, all_detections, depth_maps, cam_poses_dict,
             obj_cx = (x1 + x2) / 2
             obj_cy = (y1 + y2) / 2
 
-            # Depth from VGGT
-            depth_val = 0.0
-            if dm is not None:
-                dm_h, dm_w = dm.shape[:2]
-                scale_x, scale_y = dm_w / img_w, dm_h / img_h
-                sx1 = max(0, int(x1 * scale_x))
-                sy1 = max(0, int(y1 * scale_y))
-                sx2 = min(dm_w, int(x2 * scale_x))
-                sy2 = min(dm_h, int(y2 * scale_y))
-                if sx2 > sx1 and sy2 > sy1:
-                    patch = dm[sy1:sy2, sx1:sx2]
-                    valid = patch[patch > 0]
-                    if len(valid) > 0:
-                        depth_val = float(np.median(valid))
+            # Depth from VGGT-X depth map
+            depth_val = get_depth_at_bbox(depth_map_cache, fname, det["bbox"], (img_h, img_w))
 
-            # Region label
-            h_region = "left" if obj_cx < frame_cx - img_w * 0.2 else (
-                "right" if obj_cx > frame_cx + img_w * 0.2 else "center")
-            v_region = "top" if obj_cy < frame_cy - img_h * 0.2 else (
-                "bottom" if obj_cy > frame_cy + img_h * 0.2 else "middle")
+            # 3D world position (unprojected using COLMAP camera)
+            if depth_val > 0 and extrinsics is not None:
+                pos_3d = unproject_to_world(obj_cx, obj_cy, depth_val, intrinsics, extrinsics)
+            else:
+                pos_3d = [0.0, 0.0, 0.0]
+
+            # Region label (screen-relative)
+            h_region = "left" if obj_cx < img_w / 3 else ("right" if obj_cx > 2 * img_w / 3 else "center")
+            v_region = "top" if obj_cy < img_h / 3 else ("bottom" if obj_cy > 2 * img_h / 3 else "middle")
 
             id_str = f"{det['label'].replace(' ', '_')}_{det['id']}"
-            pos_3d = pixel_to_3d(obj_cx, obj_cy, depth_val, fx, fy, cx, cy) if depth_val > 0 else [0, 0, 0]
 
             objects.append({
                 "id": det["id"],
@@ -125,21 +135,14 @@ def build_scene_graphs(keyframes, all_detections, depth_maps, cam_poses_dict,
                 "label": det["label"],
                 "bbox": det["bbox"],
                 "mask": det.get("mask"),
-                "depth_m": round(depth_val, 2),
+                "depth_m": round(depth_val, 3),
                 "position_3d": pos_3d,
                 "region": f"{v_region}-{h_region}",
             })
 
-        relations = compute_spatial_relations(
-            objects, NEAR_THRESHOLD, FAR_THRESHOLD,
-            DIRECTION_THRESHOLD_X, DIRECTION_THRESHOLD_Y
-        )
+        # Spatial relations using 3D world positions
+        relations = compute_spatial_relations(objects, NEAR_THRESHOLD, FAR_THRESHOLD)
         hand_state = detect_hand_state(objects, HAND_OVERLAP_THRESHOLD, HAND_DEPTH_THRESHOLD)
-
-        cam_pose = None
-        if i < len(cam_poses_dict):
-            pos = cam_poses_dict[i]
-            cam_pose = {"position": [round(float(p), 3) for p in pos]}
 
         ts = timestamps[i]
         graph = {
@@ -147,13 +150,25 @@ def build_scene_graphs(keyframes, all_detections, depth_maps, cam_poses_dict,
             "original_frame": frame_indices[i],
             "timestamp": round(ts, 2),
             "timestamp_str": f"{int(ts // 60):02d}:{ts % 60:05.2f}",
-            "camera_pose": cam_pose,
+            "camera_pose": {
+                "position": [round(float(p), 4) for p in cam_center],
+            } if cam_center else None,
             "num_objects": len(objects),
             "objects": [{k: v for k, v in obj.items() if k != "mask"} for obj in objects],
             "spatial_relations": relations,
             "hand_state": hand_state,
+            "colmap_frame": fname,
         }
         scene_graphs.append(graph)
 
     print(f"Built {len(scene_graphs)} scene graphs")
+
+    # Stats
+    all_labels = set()
+    for sg in scene_graphs:
+        for obj in sg["objects"]:
+            all_labels.add(obj["label"])
+    print(f"Unique classes: {sorted(all_labels)}")
+    print(f"Avg objects/frame: {np.mean([sg['num_objects'] for sg in scene_graphs]):.1f}")
+
     return scene_graphs

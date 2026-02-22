@@ -11,3 +11,5 @@ huggingface_hub
 openai
 scipy
 Pillow
+pycolmap
+faiss-cpu
