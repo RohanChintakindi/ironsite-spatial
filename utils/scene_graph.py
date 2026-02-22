@@ -5,7 +5,6 @@ Uses COLMAP world coordinates for globally consistent 3D positions.
 
 import numpy as np
 import json
-from utils.depth import get_depth_at_bbox, unproject_to_world
 
 
 def compute_spatial_relations(objects, near_thresh=1.0, far_thresh=3.0):
@@ -89,11 +88,11 @@ def detect_hand_state(objects, overlap_thresh=0.2, depth_thresh=0.5):
     return hand_state
 
 
-def _colmap_3d_fallback(img_to_points3d, fname, bbox, cam_center):
-    """Fallback: get depth and 3D position from COLMAP 3D points in bbox.
+def _colmap_3d_position(img_to_points3d, fname, bbox, cam_center):
+    """Get metric 3D position from COLMAP points projected into a bbox.
 
-    This is the same approach the working notebook uses — COLMAP points
-    are in metric world coordinates (from GA), so this gives true meters.
+    GA-scaled COLMAP points are in metric world coordinates — this is the
+    primary source of depth/position data (same approach as the notebook).
     """
     pts = img_to_points3d.get(fname, [])
     if not pts:
@@ -124,22 +123,19 @@ def build_scene_graphs(keyframes, all_detections, recon_data, timestamps, frame_
     """Build scene graphs using VGGT-X COLMAP world coordinates."""
     from config import NEAR_THRESHOLD, FAR_THRESHOLD, HAND_OVERLAP_THRESHOLD, HAND_DEPTH_THRESHOLD
 
-    intrinsics = recon_data["intrinsics"]
     image_data = recon_data["image_data"]
-    depth_map_cache = recon_data["depth_map_cache"]
     img_to_points3d = recon_data.get("img_to_points3d", {})
 
     img_h, img_w = keyframes[0].shape[:2]
     scene_graphs = []
-    fallback_count = 0
-    depthmap_count = 0
+    hit_count = 0
+    miss_count = 0
 
     for i in range(len(keyframes)):
         fname = f"{i:06d}.jpg"
 
         # Get camera data for this frame
         cam_data = image_data.get(fname, None)
-        extrinsics = cam_data["extrinsics"] if cam_data else None
         cam_center = cam_data["cam_center"] if cam_data else None
 
         objects = []
@@ -148,25 +144,15 @@ def build_scene_graphs(keyframes, all_detections, recon_data, timestamps, frame_
             obj_cx = (x1 + x2) / 2
             obj_cy = (y1 + y2) / 2
 
-            # Try depth map first
-            depth_val = get_depth_at_bbox(depth_map_cache, fname, det["bbox"], (img_h, img_w))
+            # Use COLMAP 3D points from GA (metric world coordinates)
+            depth_m, pos_3d = _colmap_3d_position(
+                img_to_points3d, fname, det["bbox"],
+                cam_center.tolist() if cam_center is not None else None)
 
-            # 3D world position (unprojected using COLMAP camera)
-            if depth_val > 0 and extrinsics is not None:
-                pos_3d = unproject_to_world(obj_cx, obj_cy, depth_val, intrinsics, extrinsics)
-
-                # Compute metric depth from 3D position (distance from camera)
-                if cam_center is not None:
-                    depth_m = float(np.linalg.norm(np.array(pos_3d) - cam_center))
-                else:
-                    depth_m = depth_val
-                depthmap_count += 1
+            if depth_m > 0:
+                hit_count += 1
             else:
-                # Fallback: use COLMAP 3D points directly (metric from GA)
-                depth_m, pos_3d = _colmap_3d_fallback(
-                    img_to_points3d, fname, det["bbox"],
-                    cam_center.tolist() if cam_center is not None else None)
-                fallback_count += 1
+                miss_count += 1
 
             # Region label (screen-relative)
             h_region = "left" if obj_cx < img_w / 3 else ("right" if obj_cx > 2 * img_w / 3 else "center")
@@ -197,7 +183,7 @@ def build_scene_graphs(keyframes, all_detections, recon_data, timestamps, frame_
             "timestamp_str": f"{int(ts // 60):02d}:{ts % 60:05.2f}",
             "camera_pose": {
                 "position": [round(float(p), 4) for p in cam_center],
-            } if cam_center else None,
+            } if cam_center is not None else None,
             "num_objects": len(objects),
             "objects": [{k: v for k, v in obj.items() if k != "mask"} for obj in objects],
             "spatial_relations": relations,
@@ -207,7 +193,7 @@ def build_scene_graphs(keyframes, all_detections, recon_data, timestamps, frame_
         scene_graphs.append(graph)
 
     print(f"Built {len(scene_graphs)} scene graphs")
-    print(f"  Depth source: {depthmap_count} from depth maps, {fallback_count} from COLMAP 3D points")
+    print(f"  COLMAP 3D points: {hit_count} objects positioned, {miss_count} with no points in bbox")
 
     # Stats
     all_labels = set()
