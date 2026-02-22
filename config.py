@@ -19,7 +19,7 @@ TEXT_PROMPT = (
 )
 DETECTION_THRESHOLD = 0.3
 REDETECT_EVERY = 50
-TRACK_CHUNK_SIZE = 100  # frames per SAM2 tracking chunk (prevents OOM)
+TRACK_CHUNK_SIZE = 10000  # process all frames at once (H200 has enough VRAM)
 
 # SAM2 model config
 SAM2_CHECKPOINT = "Grounded-SAM-2/checkpoints/sam2.1_hiera_small.pt"
