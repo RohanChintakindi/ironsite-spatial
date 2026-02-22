@@ -14,6 +14,7 @@ from services.serializer import (
     annotated_frame_jpeg,
     dashboard_data_from_scene_graphs,
     detection_frame_jpeg,
+    tracked_frame_jpeg,
     depth_to_plasma_jpeg,
     frame_to_jpeg,
     pointcloud_to_binary,
@@ -135,7 +136,7 @@ async def get_depth_frame(run_id: str, idx: int, request: Request):
 
 @router.get("/{run_id}/frame/{idx}/detected")
 async def get_detected_frame(run_id: str, idx: int, request: Request):
-    """Return keyframe with basic DINO detection boxes (available after detection step)."""
+    """Return keyframe with SAM2-style colored tracking overlays."""
     run = _get_run(run_id, request)
     data = _get_data(run)
 
@@ -144,12 +145,12 @@ async def get_detected_frame(run_id: str, idx: int, request: Request):
     if keyframes is None:
         raise HTTPException(status_code=409, detail="Preprocess step not completed")
     if all_detections is None:
-        raise HTTPException(status_code=409, detail="Detection step not completed")
+        raise HTTPException(status_code=409, detail="Tracking step not completed")
     if idx < 0 or idx >= len(keyframes):
         raise HTTPException(status_code=404, detail=f"Frame index {idx} out of range")
 
     dets = all_detections[idx] if idx < len(all_detections) else []
-    jpeg_bytes = detection_frame_jpeg(keyframes[idx], dets)
+    jpeg_bytes = tracked_frame_jpeg(keyframes[idx], dets)
     return StreamingResponse(io.BytesIO(jpeg_bytes), media_type="image/jpeg")
 
 

@@ -86,6 +86,57 @@ def detection_frame_jpeg(
     return buf.getvalue()
 
 
+def tracked_frame_jpeg(
+    frame_rgb: np.ndarray,
+    detections: list[dict],
+    quality: int = 85,
+) -> bytes:
+    """Draw SAM2-style colored segmentation overlays with object IDs.
+
+    Each tracked object gets a class-coloured semi-transparent fill,
+    making this visually distinct from the DINO green-box style.
+    """
+    img = Image.fromarray(frame_rgb.copy())
+    overlay = Image.new("RGBA", img.size, (0, 0, 0, 0))
+    draw = ImageDraw.Draw(overlay, "RGBA")
+
+    try:
+        font = ImageFont.truetype("arial.ttf", 13)
+    except (OSError, IOError):
+        try:
+            font = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", 13)
+        except (OSError, IOError):
+            font = ImageFont.load_default()
+
+    for det in detections:
+        label = det.get("label", "unknown")
+        obj_id = det.get("id", 0)
+        bbox = det.get("bbox", [0, 0, 0, 0])
+        x1, y1, x2, y2 = [int(v) for v in bbox]
+
+        color = CLASS_COLORS.get(label, DEFAULT_COLOR)
+
+        # Semi-transparent filled rectangle (mask-like overlay)
+        draw.rectangle([x1, y1, x2, y2], fill=color + (60,), outline=color + (200,), width=2)
+
+        # Label with object ID
+        text = f"{label} #{obj_id}"
+        text_bbox = draw.textbbox((x1, y1), text, font=font)
+        tw = text_bbox[2] - text_bbox[0]
+        th = text_bbox[3] - text_bbox[1]
+        bg_y = max(y1 - th - 6, 0)
+        draw.rectangle([x1, bg_y, x1 + tw + 6, bg_y + th + 6], fill=color + (220,))
+        draw.text((x1 + 3, bg_y + 2), text, fill=(255, 255, 255, 255), font=font)
+
+    # Composite overlay onto original frame
+    img = img.convert("RGBA")
+    img = Image.alpha_composite(img, overlay)
+
+    buf = io.BytesIO()
+    img.convert("RGB").save(buf, format="JPEG", quality=quality)
+    return buf.getvalue()
+
+
 def annotated_frame_jpeg(
     frame_rgb: np.ndarray,
     objects: list[dict],
