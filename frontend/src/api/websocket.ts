@@ -3,7 +3,7 @@ import type { WsMessage } from './types'
 export type WsHandler = (msg: WsMessage) => void
 
 export function connectWs(runId: string, onMessage: WsHandler): WebSocket {
-  const apiUrl = import.meta.env.VITE_API_URL || ''
+  const apiUrl = import.meta.env.VITE_API_URL || 'https://rats-cutting-enlarge-lined.trycloudflare.com'
   let wsUrl: string
   if (apiUrl) {
     // External backend: convert http(s) to ws(s)

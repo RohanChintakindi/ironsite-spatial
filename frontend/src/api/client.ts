@@ -1,4 +1,4 @@
-const API_HOST = import.meta.env.VITE_API_URL || ''
+const API_HOST = import.meta.env.VITE_API_URL || 'https://rats-cutting-enlarge-lined.trycloudflare.com'
 const BASE = `${API_HOST}/api`
 
 async function request<T>(path: string, opts?: RequestInit): Promise<T> {
