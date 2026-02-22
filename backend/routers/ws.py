@@ -18,8 +18,9 @@ async def websocket_endpoint(websocket: WebSocket, run_id: str):
     discarded (keep-alive / ping).
     """
     ws_manager = websocket.app.state.ws_manager
+    runs_dict = websocket.app.state.runs
 
-    await ws_manager.connect(run_id, websocket)
+    await ws_manager.connect(run_id, websocket, runs_dict)
 
     try:
         while True:

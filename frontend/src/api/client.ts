@@ -43,12 +43,7 @@ export async function startPipeline(config: {
 }
 
 export async function getPipelineStatus(runId: string) {
-  return request<{
-    run_id: string
-    status: string
-    current_step?: string
-    steps: Record<string, unknown>
-  }>(`/pipeline/status/${runId}`)
+  return request<import('./types').PipelineStatus>(`/pipeline/status/${runId}`)
 }
 
 export async function getPreprocessData(runId: string) {

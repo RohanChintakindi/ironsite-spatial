@@ -26,12 +26,40 @@ class ConnectionManager:
     def __init__(self) -> None:
         self.active: dict[str, list[WebSocket]] = {}
 
-    async def connect(self, run_id: str, websocket: WebSocket) -> None:
+    async def connect(self, run_id: str, websocket: WebSocket, runs_dict: dict) -> None:
         await websocket.accept()
         if run_id not in self.active:
             self.active[run_id] = []
         self.active[run_id].append(websocket)
         logger.info("WS connected: run_id=%s  total=%d", run_id, len(self.active[run_id]))
+
+        # Send catch-up: replay current state of all steps so the client
+        # doesn't miss events that fired before this WS connected.
+        run = runs_dict.get(run_id)
+        if run:
+            for step_name, step_info in run.get("steps", {}).items():
+                status = step_info.get("status", "pending")
+                if status != "pending":
+                    try:
+                        await websocket.send_json({
+                            "type": "step_status",
+                            "step": step_name,
+                            "status": status,
+                            "progress": step_info.get("progress", 0.0),
+                            "metadata": step_info.get("metadata"),
+                            "error": step_info.get("error"),
+                        })
+                    except Exception:
+                        break
+            # Also send pipeline_complete if already done
+            if run.get("status") == "completed":
+                try:
+                    await websocket.send_json({
+                        "type": "pipeline_complete",
+                        "status": "completed",
+                    })
+                except Exception:
+                    pass
 
     def disconnect(self, run_id: str, websocket: WebSocket) -> None:
         if run_id in self.active:
