@@ -1,0 +1,82 @@
+@import "tailwindcss";
+
+@theme {
+  --color-bg-app: #0a0a0f;
+  --color-bg-card: #111111;
+  --color-bg-surface: #1a1a1a;
+  --color-accent: #f59e0b;
+  --color-accent-cyan: #06b6d4;
+  --color-text-primary: #e4e4e7;
+  --color-text-secondary: #a1a1aa;
+  --color-text-muted: #52525b;
+  --color-grid: rgba(245, 158, 11, 0.05);
+  --color-border: #222222;
+  --font-mono: "JetBrains Mono", ui-monospace, monospace;
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
+body {
+  margin: 0;
+  background: var(--color-bg-app);
+  color: var(--color-text-primary);
+  font-family: system-ui, -apple-system, sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Blueprint grid background */
+.bg-grid {
+  background-image:
+    linear-gradient(var(--color-grid) 1px, transparent 1px),
+    linear-gradient(90deg, var(--color-grid) 1px, transparent 1px);
+  background-size: 40px 40px;
+}
+
+/* Scrollbar styling */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: var(--color-bg-app);
+}
+::-webkit-scrollbar-thumb {
+  background: #333;
+  border-radius: 3px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #555;
+}
+
+/* JetBrains Mono for data displays */
+.font-data {
+  font-family: var(--font-mono);
+}
+
+/* Glow effects */
+.glow-amber {
+  box-shadow: 0 0 20px rgba(245, 158, 11, 0.3), 0 0 60px rgba(245, 158, 11, 0.1);
+}
+
+.glow-cyan {
+  box-shadow: 0 0 20px rgba(6, 182, 212, 0.3), 0 0 60px rgba(6, 182, 212, 0.1);
+}
+
+/* Chapter locked state */
+.chapter-locked {
+  opacity: 0.5;
+  filter: blur(2px);
+  pointer-events: none;
+  user-select: none;
+}
+
+/* Horizontal scroll container */
+.scroll-x {
+  overflow-x: auto;
+  scroll-snap-type: x mandatory;
+}
+.scroll-x > * {
+  scroll-snap-align: start;
+}
