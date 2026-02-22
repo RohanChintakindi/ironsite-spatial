@@ -3,7 +3,7 @@ Configuration for the Ironsite Spatial Awareness Pipeline.
 """
 
 # --- Video Preprocessing ---
-KEYFRAME_INTERVAL = 30  # Extract every Nth frame (30 = ~2s at 15fps, ~64 frames)
+KEYFRAME_INTERVAL = 10  # Extract every Nth frame (10 = ~0.67s at 15fps, ~450 frames for 5min)
 MAX_FRAMES = 0          # 0 = no cap, otherwise limit keyframes
 
 # Fisheye undistortion parameters (estimated for body cam barrel distortion)
@@ -41,7 +41,7 @@ for _analytic, _fine_labels in ANALYTIC_TAXONOMY.items():
         LABEL_TO_ANALYTIC[_fl.lower()] = _analytic
 
 # --- FastVGGT ---
-FASTVGGT_MERGING = 0       # token merging off (merging has input size constraints)
+FASTVGGT_MERGING = 6       # token merging block (6=recommended, 4x speedup)
 FASTVGGT_MERGE_RATIO = 0.9 # how aggressively to merge tokens (0.9 = 4x speedup)
 FASTVGGT_DEPTH_CONF = 3.0  # depth confidence threshold
 FASTVGGT_MAX_POINTS = 100000

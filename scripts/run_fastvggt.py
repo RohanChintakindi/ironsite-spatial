@@ -35,16 +35,15 @@ def load_images(image_dir, max_size=1024):
     images_np = np.stack(images)  # (N, H, W, 3)
     N, H, W, C = images_np.shape
 
-    # Resize to nearest multiple of 14 (DINOv2 patch size requirement)
-    patch_size = 14
-    H_new = (H // patch_size) * patch_size
-    W_new = (W // patch_size) * patch_size
-    if H_new != H or W_new != W:
-        print(f"Resizing frames: {W}x{H} -> {W_new}x{H_new} (patch size {patch_size})")
+    # Resize to 518x518 (standard DINOv2 size, 37*14=518)
+    # Token merging requires square images at this resolution
+    TARGET_SIZE = 518
+    if H != TARGET_SIZE or W != TARGET_SIZE:
+        print(f"Resizing frames: {W}x{H} -> {TARGET_SIZE}x{TARGET_SIZE}")
         import cv2
         resized = []
         for img in images_np:
-            resized.append(cv2.resize(img, (W_new, H_new), interpolation=cv2.INTER_LINEAR))
+            resized.append(cv2.resize(img, (TARGET_SIZE, TARGET_SIZE), interpolation=cv2.INTER_LINEAR))
         images_np = np.stack(resized)
 
     # Normalize to [0, 1]
