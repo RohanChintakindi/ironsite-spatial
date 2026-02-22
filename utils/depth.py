@@ -285,6 +285,64 @@ def run_full_3d_pipeline(scene_dir, output_dir, merging=6, merge_ratio=0.9,
                                       depth_conf_thresh, max_points, num_keyframes)
 
 
+def calibrate_depth_scale(depth_map_cache, image_data, intrinsics, img_to_points3d):
+    """Compute scale factor to convert raw depth maps to metric using COLMAP 3D points.
+
+    VGGT-X saves raw model depth (0-1 range). GA scales camera poses to metric
+    but not the depth maps. We calibrate by comparing depth map values with
+    known metric depths from COLMAP 3D points.
+    """
+    ratios = []
+    sample_images = list(img_to_points3d.keys())[:50]  # sample images for speed
+
+    for fname in sample_images:
+        if fname not in depth_map_cache or fname not in image_data:
+            continue
+
+        dep = depth_map_cache[fname]
+        H_d, W_d = dep.shape
+        cam_data = image_data[fname]
+        R = cam_data["extrinsics"][:3, :3]
+        t = cam_data["extrinsics"][:3, 3]
+
+        pts = img_to_points3d[fname][:100]  # sample points per image
+        for p in pts:
+            px, py = p["xy"]
+            xyz_world = np.array(p["xyz"])
+
+            # Metric depth = Z in camera coordinates
+            p_cam = R @ xyz_world + t
+            metric_z = float(p_cam[2])
+            if metric_z <= 0.1:
+                continue
+
+            # Raw depth map value at this pixel
+            # Scale pixel coords from COLMAP image size to depth map resolution
+            W_img = intrinsics[0, 2] * 2  # cx ≈ W/2
+            H_img = intrinsics[1, 2] * 2  # cy ≈ H/2
+            dx = int(px * W_d / W_img)
+            dy = int(py * H_d / H_img)
+            dx = min(max(dx, 0), W_d - 1)
+            dy = min(max(dy, 0), H_d - 1)
+            raw_depth = float(dep[dy, dx])
+
+            if raw_depth <= 1e-4 or not np.isfinite(raw_depth):
+                continue
+
+            ratios.append(metric_z / raw_depth)
+
+    if len(ratios) > 10:
+        # Use median for robustness against outliers
+        scale = float(np.median(ratios))
+        std = float(np.std(ratios))
+        print(f"  Depth calibration: {len(ratios)} point pairs, "
+              f"scale={scale:.2f} (std={std:.2f})")
+        return scale
+    else:
+        print(f"  WARNING: Only {len(ratios)} calibration points, using scale=1.0")
+        return 1.0
+
+
 def _run_vggtx_pipeline(scene_dir, output_dir, chunk_size, max_query_pts,
                          max_points, num_keyframes):
     """VGGT-X backend: metric depth via global alignment + COLMAP output."""
@@ -309,8 +367,17 @@ def _run_vggtx_pipeline(scene_dir, output_dir, chunk_size, max_query_pts,
     depth_dir = find_depth_dir(vggtx_out)
     depth_map_cache = load_depth_maps(depth_dir, num_keyframes)
 
-    # Sanity check: VGGT-X with GA should give metric depth in meters
-    if depth_map_cache:
+    # Calibrate depth maps to metric using COLMAP 3D points
+    if depth_map_cache and img_to_points3d:
+        depth_scale = calibrate_depth_scale(
+            depth_map_cache, image_data, intrinsics, img_to_points3d)
+
+        if abs(depth_scale - 1.0) > 0.1:
+            print(f"  Scaling all depth maps by {depth_scale:.2f}x to convert to meters")
+            for fname in depth_map_cache:
+                depth_map_cache[fname] = depth_map_cache[fname] * depth_scale
+
+        # Print calibrated stats
         all_depths = []
         for dep in depth_map_cache.values():
             valid = dep[np.isfinite(dep) & (dep > 0)]
@@ -318,7 +385,7 @@ def _run_vggtx_pipeline(scene_dir, output_dir, chunk_size, max_query_pts,
                 all_depths.append(valid)
         if all_depths:
             all_depths = np.concatenate(all_depths)
-            print(f"  Depth stats (metric): min={all_depths.min():.2f}m, "
+            print(f"  Calibrated depth: min={all_depths.min():.2f}m, "
                   f"max={all_depths.max():.2f}m, median={np.median(all_depths):.2f}m")
 
     # Build camera trajectory
