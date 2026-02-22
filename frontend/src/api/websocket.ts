@@ -3,16 +3,8 @@ import type { WsMessage } from './types'
 export type WsHandler = (msg: WsMessage) => void
 
 export function connectWs(runId: string, onMessage: WsHandler): WebSocket {
-  const apiUrl = import.meta.env.VITE_API_URL || 'https://rats-cutting-enlarge-lined.trycloudflare.com'
-  let wsUrl: string
-  if (apiUrl) {
-    // External backend: convert http(s) to ws(s)
-    wsUrl = apiUrl.replace(/^http/, 'ws') + `/ws/${runId}`
-  } else {
-    // Same-origin (dev proxy)
-    const protocol = window.location.protocol === 'https:' ? 'wss' : 'ws'
-    wsUrl = `${protocol}://${window.location.host}/ws/${runId}`
-  }
+  const apiUrl = import.meta.env.VITE_API_URL?.trim() || window.location.origin
+  const wsUrl = apiUrl.replace(/^http/, 'ws').replace(/\/+$/, '') + `/ws/${runId}`
   const ws = new WebSocket(wsUrl)
 
   ws.onopen = () => {

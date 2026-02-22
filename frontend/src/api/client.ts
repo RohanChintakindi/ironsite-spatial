@@ -1,4 +1,5 @@
-const API_HOST = import.meta.env.VITE_API_URL || 'https://rats-cutting-enlarge-lined.trycloudflare.com'
+const apiHost = import.meta.env.VITE_API_URL?.trim() || window.location.origin
+const API_HOST = apiHost.replace(/\/+$/, '')
 const BASE = `${API_HOST}/api`
 
 async function request<T>(path: string, opts?: RequestInit): Promise<T> {
@@ -138,4 +139,8 @@ export async function queryMemory(
     `/memory/${runId}/query`,
     { method: 'POST', body: JSON.stringify(query) },
   )
+}
+
+export function resultDownloadUrl(runId: string, kind: 'scene-graphs' | 'pointcloud' | 'dashboard-data') {
+  return `${BASE}/results/${runId}/${kind}`
 }
