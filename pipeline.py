@@ -264,7 +264,32 @@ def main():
         for concern in ppe.get("concerns", []):
             print(f"    ! {concern}")
 
-    print(f"  Completed in {time.time() - t0:.1f}s")
+    perf = event_result.get("performance", {})
+    if perf:
+        eff = perf.get("efficiency", {})
+        qty = perf.get("quantity", {})
+        spatial = perf.get("spatial", {})
+        print(f"\n  --- Performance ---")
+        print(f"  Efficiency: {eff.get('overall_score', 0):.0f}/100  "
+              f"(production={eff.get('production_score', 0):.0f}  "
+              f"movement={eff.get('movement_score', 0):.0f}  "
+              f"continuity={eff.get('continuity_score', 0):.0f})")
+        print(f"  Blocks: {qty.get('block_interactions', 0)} interactions  "
+              f"({qty.get('blocks_per_min_production', 0):.1f}/min production)")
+        print(f"  Tools: {qty.get('tool_pickups', 0)} pickups  "
+              f"({qty.get('tool_changes_per_min', 0):.1f}/min)")
+        print(f"  Work area: {spatial.get('work_area_m2', 0):.1f}m²  |  "
+              f"Blocks/meter: {spatial.get('blocks_per_meter', 0):.2f}")
+
+        suggestions = perf.get("suggestions", [])
+        if suggestions:
+            print(f"\n  --- Optimization Suggestions ---")
+            for s in suggestions:
+                sev = s.get("severity", "")
+                icon = "!!" if sev == "high" else "!" if sev == "medium" else "-"
+                print(f"  {icon} [{s.get('category')}] {s.get('message')}")
+
+    print(f"\n  Completed in {time.time() - t0:.1f}s")
 
     # ==========================================
     # Step 5: FAISS Spatial Memory

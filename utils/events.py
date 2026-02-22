@@ -253,6 +253,10 @@ def extract_events(scene_graphs, cam_positions_smooth=None):
     # Sort all events by timestamp
     events.sort(key=lambda e: e.get("timestamp", 0))
 
+    # Performance analysis
+    performance = _compute_performance(
+        frame_activities, timeline, movement_segments, events, scene_graphs, stats)
+
     print(f"  Extracted {len(events)} events")
     print(f"  Timeline: {len(timeline)} segments")
     type_counts = defaultdict(int)
@@ -266,6 +270,7 @@ def extract_events(scene_graphs, cam_positions_smooth=None):
         "timeline": timeline,
         "stats": stats,
         "ppe_report": ppe_report,
+        "performance": performance,
     }
 
 
@@ -517,6 +522,168 @@ def _detect_relocations(movement_segments, min_distance=2.0):
     return events
 
 
+def _compute_performance(frame_activities, timeline, movement_segments, events, scene_graphs, stats):
+    """Compute detailed performance metrics and optimization suggestions."""
+    total_time = stats.get("total_time_sec", 1)
+    total_frames = len(frame_activities) or 1
+
+    # ---- Quantity metrics ----
+    block_events = [e for e in events if e["type"] == "block_interaction"]
+    tool_pickups = [e for e in events if e["type"] == "tool_pickup"]
+    idle_periods = [e for e in events if e["type"] == "idle_period"]
+    relocations = [e for e in events if e["type"] == "relocation"]
+
+    # Block placement rate
+    production_time = total_time * stats.get("production_pct", 0) / 100
+    blocks_per_min = len(block_events) / (production_time / 60) if production_time > 0 else 0
+
+    # Tool change frequency
+    tool_changes_per_min = len(tool_pickups) / (total_time / 60) if total_time > 0 else 0
+
+    # Idle time total
+    idle_time_sec = sum(
+        (e.get("end_timestamp", 0) - e.get("timestamp", 0)) for e in idle_periods
+    )
+
+    # ---- Efficiency scores (0-100) ----
+
+    # Production efficiency: % of time in production vs prep+idle
+    prod_pct = stats.get("production_pct", 0)
+    efficiency_score = min(100, prod_pct * 1.2)  # 83%+ production = 100 score
+
+    # Movement efficiency: blocks per meter traveled
+    distance = stats.get("distance_traveled_m", 1) or 1
+    blocks_per_meter = len(block_events) / distance
+    movement_efficiency = min(100, blocks_per_meter * 100)  # 1 block/m = 100 score
+
+    # Continuity: avg production streak length (fewer interruptions = better)
+    prod_streaks = []
+    current_streak = 0
+    for _, _, _, activity in frame_activities:
+        if activity == "production":
+            current_streak += 1
+        else:
+            if current_streak > 0:
+                prod_streaks.append(current_streak)
+            current_streak = 0
+    if current_streak > 0:
+        prod_streaks.append(current_streak)
+    avg_streak = np.mean(prod_streaks) if prod_streaks else 0
+    continuity_score = min(100, avg_streak * 5)  # 20-frame avg streak = 100
+
+    # ---- Spatial efficiency ----
+    # How much of the work area does the worker use efficiently?
+    if len(movement_segments) > 1:
+        positions = np.array([m["position"] for m in movement_segments])
+        work_area = float(
+            (positions[:, 0].max() - positions[:, 0].min()) *
+            (positions[:, 2].max() - positions[:, 2].min())
+        )
+    else:
+        work_area = 0
+
+    # ---- Timeline analysis ----
+    longest_prod = max((s for s in timeline if s["activity"] == "production"),
+                       key=lambda s: s["duration_sec"], default=None)
+    longest_idle = max((s for s in timeline if s["activity"] in ("downtime", "standby")),
+                       key=lambda s: s["duration_sec"], default=None)
+
+    # ---- Optimization suggestions ----
+    suggestions = []
+
+    if stats.get("prep_pct", 0) > 30:
+        suggestions.append({
+            "category": "prep_time",
+            "severity": "medium",
+            "message": f"Prep time is {stats['prep_pct']:.0f}% of total. "
+                       f"Consider pre-staging materials closer to work area.",
+        })
+
+    if stats.get("downtime_pct", 0) > 10:
+        suggestions.append({
+            "category": "downtime",
+            "severity": "high",
+            "message": f"Downtime is {stats['downtime_pct']:.0f}% of total. "
+                       f"Investigate causes of idle periods.",
+        })
+
+    if tool_changes_per_min > 3:
+        suggestions.append({
+            "category": "tool_changes",
+            "severity": "medium",
+            "message": f"High tool change rate ({tool_changes_per_min:.1f}/min). "
+                       f"Consider organizing tools for fewer context switches.",
+        })
+
+    if distance > 0 and blocks_per_meter < 0.3:
+        suggestions.append({
+            "category": "movement",
+            "severity": "medium",
+            "message": f"Low block-to-movement ratio ({blocks_per_meter:.2f} blocks/m). "
+                       f"Materials may be too far from work station.",
+        })
+
+    if longest_idle and longest_idle["duration_sec"] > 30:
+        suggestions.append({
+            "category": "long_idle",
+            "severity": "high",
+            "message": f"Longest idle period: {longest_idle['duration_sec']:.0f}s "
+                       f"at {longest_idle['start']}. Investigate cause.",
+        })
+
+    if avg_streak < 5 and len(prod_streaks) > 3:
+        suggestions.append({
+            "category": "fragmentation",
+            "severity": "medium",
+            "message": f"Production is fragmented (avg {avg_streak:.0f} frame streaks). "
+                       f"Frequent interruptions reduce efficiency.",
+        })
+
+    if not suggestions:
+        suggestions.append({
+            "category": "good",
+            "severity": "low",
+            "message": "Worker is performing efficiently with good production continuity.",
+        })
+
+    return {
+        "quantity": {
+            "block_interactions": len(block_events),
+            "blocks_per_min_production": round(blocks_per_min, 2),
+            "tool_pickups": len(tool_pickups),
+            "tool_changes_per_min": round(tool_changes_per_min, 2),
+            "idle_periods": len(idle_periods),
+            "idle_time_sec": round(idle_time_sec, 1),
+            "relocations": len(relocations),
+        },
+        "efficiency": {
+            "overall_score": round((efficiency_score + movement_efficiency + continuity_score) / 3, 1),
+            "production_score": round(efficiency_score, 1),
+            "movement_score": round(movement_efficiency, 1),
+            "continuity_score": round(continuity_score, 1),
+        },
+        "spatial": {
+            "work_area_m2": round(work_area, 2),
+            "distance_m": round(distance, 2),
+            "blocks_per_meter": round(blocks_per_meter, 3),
+        },
+        "time_analysis": {
+            "production_sec": round(production_time, 1),
+            "prep_sec": round(total_time * stats.get("prep_pct", 0) / 100, 1),
+            "idle_sec": round(idle_time_sec, 1),
+            "longest_production": {
+                "start": longest_prod["start"],
+                "duration_sec": longest_prod["duration_sec"],
+            } if longest_prod else None,
+            "longest_idle": {
+                "start": longest_idle["start"],
+                "duration_sec": longest_idle["duration_sec"],
+            } if longest_idle else None,
+        },
+        "suggestions": suggestions,
+    }
+
+
 # ---------------------------------------------------------------------------
 # VLM narrator (optional — send compact event summary instead of raw data)
 # ---------------------------------------------------------------------------
@@ -556,6 +723,21 @@ def events_to_vlm_context(event_result):
                 f"{seg['start']} → {seg['end']} | {seg['activity']:12s} | "
                 f"{seg['duration_sec']:.0f}s ({seg['num_frames']} frames)"
             )
+        lines.append("")
+
+    perf = event_result.get("performance", {})
+    if perf:
+        eff = perf.get("efficiency", {})
+        qty = perf.get("quantity", {})
+        lines.append("=== PERFORMANCE ===")
+        lines.append(f"Efficiency score: {eff.get('overall_score', 0):.0f}/100")
+        lines.append(f"  Production: {eff.get('production_score', 0):.0f}  "
+                     f"Movement: {eff.get('movement_score', 0):.0f}  "
+                     f"Continuity: {eff.get('continuity_score', 0):.0f}")
+        lines.append(f"Blocks/min (production): {qty.get('blocks_per_min_production', 0):.1f}")
+        lines.append(f"Tool changes/min: {qty.get('tool_changes_per_min', 0):.1f}")
+        for s in perf.get("suggestions", []):
+            lines.append(f"  SUGGESTION: {s.get('message')}")
         lines.append("")
 
     events = event_result.get("events", [])
