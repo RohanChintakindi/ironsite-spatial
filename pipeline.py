@@ -16,6 +16,8 @@ import os
 import sys
 import time
 import json
+import glob
+import pickle
 import torch
 import numpy as np
 
@@ -43,6 +45,8 @@ def main():
                         help=f"VGGT-X chunk size (default: {VGGTX_CHUNK_SIZE})")
     parser.add_argument("--max-frames", type=int, default=None,
                         help="Max keyframes to extract (0=unlimited)")
+    parser.add_argument("--force", action="store_true",
+                        help="Force re-run all steps (ignore cached results)")
     args = parser.parse_args()
 
     if not os.path.exists(args.video):
@@ -62,6 +66,10 @@ def main():
     chunk_size = args.chunk_size or VGGTX_CHUNK_SIZE
     max_frames = args.max_frames if args.max_frames is not None else MAX_FRAMES
 
+    # Cache directory
+    cache_dir = os.path.join(args.output, ".cache")
+    os.makedirs(cache_dir, exist_ok=True)
+
     # Scene directory for VGGT-X (expects images/ subdirectory)
     scene_dir = os.path.join(args.output, "scene")
     frames_dir = os.path.join(scene_dir, "images")
@@ -72,14 +80,33 @@ def main():
     print("\n" + "=" * 60)
     print("STEP 1: Video Preprocessing")
     print("=" * 60)
-    t0 = time.time()
 
-    keyframes, timestamps, frame_indices, fps, w, h = extract_keyframes(
-        args.video, frames_dir, interval=kf_interval,
-        k_scale=FISHEYE_K_SCALE, D=FISHEYE_D, balance=FISHEYE_BALANCE,
-        max_frames=max_frames,
-    )
-    print(f"  Completed in {time.time() - t0:.1f}s")
+    preprocess_cache = os.path.join(cache_dir, "preprocess.pkl")
+    existing_frames = glob.glob(os.path.join(frames_dir, "*.jpg"))
+
+    if not args.force and existing_frames and os.path.exists(preprocess_cache):
+        print("  SKIPPED — keyframes already extracted")
+        with open(preprocess_cache, "rb") as f:
+            cached = pickle.load(f)
+        keyframes = cached["keyframes"]
+        timestamps = cached["timestamps"]
+        frame_indices = cached["frame_indices"]
+        fps = cached["fps"]
+        w, h = cached["w"], cached["h"]
+        print(f"  Loaded {len(keyframes)} keyframes from cache")
+    else:
+        t0 = time.time()
+        keyframes, timestamps, frame_indices, fps, w, h = extract_keyframes(
+            args.video, frames_dir, interval=kf_interval,
+            k_scale=FISHEYE_K_SCALE, D=FISHEYE_D, balance=FISHEYE_BALANCE,
+            max_frames=max_frames,
+        )
+        with open(preprocess_cache, "wb") as f:
+            pickle.dump({
+                "keyframes": keyframes, "timestamps": timestamps,
+                "frame_indices": frame_indices, "fps": fps, "w": w, "h": h,
+            }, f)
+        print(f"  Completed in {time.time() - t0:.1f}s")
 
     # ==========================================
     # Step 2: Grounded SAM 2
@@ -87,17 +114,32 @@ def main():
     print("\n" + "=" * 60)
     print("STEP 2: Grounded SAM 2 — Detection + Segmentation + Tracking")
     print("=" * 60)
-    t0 = time.time()
 
-    all_detections, object_labels = run_grounded_sam2(
-        keyframes, frames_dir, device,
-        text_prompt=TEXT_PROMPT,
-        threshold=DETECTION_THRESHOLD,
-        redetect_every=REDETECT_EVERY,
-        sam2_checkpoint=SAM2_CHECKPOINT,
-        sam2_config=SAM2_CONFIG,
-    )
-    print(f"  Completed in {time.time() - t0:.1f}s")
+    detection_cache = os.path.join(cache_dir, "detections.pkl")
+
+    if not args.force and os.path.exists(detection_cache):
+        print("  SKIPPED — detections already cached")
+        with open(detection_cache, "rb") as f:
+            cached = pickle.load(f)
+        all_detections = cached["all_detections"]
+        object_labels = cached["object_labels"]
+        print(f"  Loaded detections for {len(all_detections)} frames")
+    else:
+        t0 = time.time()
+        all_detections, object_labels = run_grounded_sam2(
+            keyframes, frames_dir, device,
+            text_prompt=TEXT_PROMPT,
+            threshold=DETECTION_THRESHOLD,
+            redetect_every=REDETECT_EVERY,
+            sam2_checkpoint=SAM2_CHECKPOINT,
+            sam2_config=SAM2_CONFIG,
+        )
+        with open(detection_cache, "wb") as f:
+            pickle.dump({
+                "all_detections": all_detections,
+                "object_labels": object_labels,
+            }, f)
+        print(f"  Completed in {time.time() - t0:.1f}s")
 
     # ==========================================
     # Step 3: VGGT-X (3D Reconstruction)
@@ -105,19 +147,29 @@ def main():
     print("\n" + "=" * 60)
     print("STEP 3: VGGT-X — 3D Reconstruction + Depth + Trajectory")
     print("=" * 60)
-    t0 = time.time()
 
-    recon_data = run_full_3d_pipeline(
-        scene_dir=scene_dir,
-        vggtx_dir=VGGTX_DIR,
-        chunk_size=chunk_size,
-        max_query_pts=VGGTX_MAX_QUERY_PTS,
-        shared_camera=VGGTX_SHARED_CAMERA,
-        use_ga=VGGTX_USE_GA,
-        save_depth=VGGTX_SAVE_DEPTH,
-        num_keyframes=len(keyframes),
-    )
-    print(f"  Completed in {time.time() - t0:.1f}s")
+    recon_cache = os.path.join(cache_dir, "recon.pkl")
+
+    if not args.force and os.path.exists(recon_cache):
+        print("  SKIPPED — 3D reconstruction already cached")
+        with open(recon_cache, "rb") as f:
+            recon_data = pickle.load(f)
+        print(f"  Loaded: {len(recon_data['image_data'])} poses, {len(recon_data['points_xyz'])} points")
+    else:
+        t0 = time.time()
+        recon_data = run_full_3d_pipeline(
+            scene_dir=scene_dir,
+            vggtx_dir=VGGTX_DIR,
+            chunk_size=chunk_size,
+            max_query_pts=VGGTX_MAX_QUERY_PTS,
+            shared_camera=VGGTX_SHARED_CAMERA,
+            use_ga=VGGTX_USE_GA,
+            save_depth=VGGTX_SAVE_DEPTH,
+            num_keyframes=len(keyframes),
+        )
+        with open(recon_cache, "wb") as f:
+            pickle.dump(recon_data, f)
+        print(f"  Completed in {time.time() - t0:.1f}s")
 
     # ==========================================
     # Step 4: Scene Graph Builder
