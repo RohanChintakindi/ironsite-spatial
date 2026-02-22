@@ -86,10 +86,10 @@ export default function VideoUpload() {
         onDrop={handleDrop}
         onClick={() => fileInputRef.current?.click()}
         className={clsx(
-          'rounded-xl border-2 border-dashed p-8 text-center transition-all cursor-pointer',
+          'rounded-xl border-2 border-dashed p-10 text-center transition-all duration-300 cursor-pointer relative overflow-hidden',
           dragOver
-            ? 'border-[#f59e0b] bg-[#f59e0b]/5'
-            : 'border-[#333] bg-[#111] hover:border-[#f59e0b]/40',
+            ? 'border-[#f59e0b] bg-[#f59e0b]/5 scale-[1.01]'
+            : 'border-[#2a2a2a] bg-[#0f0f14] hover:border-[#f59e0b]/30 hover:bg-[#111]',
         )}
       >
         <input
@@ -109,47 +109,47 @@ export default function VideoUpload() {
           <>
             <Film className="w-10 h-10 mx-auto mb-3 text-[#f59e0b]" />
             <p className="text-sm text-[#e4e4e7] font-data">{fileName}</p>
-            <p className="text-xs text-[#52525b] mt-1">Click or drop to change</p>
+            <p className="text-xs text-[#52525b] mt-1.5">Click or drop to change</p>
           </>
         ) : (
           <>
-            <Upload className="w-10 h-10 mx-auto mb-3 text-[#52525b]" />
+            <Upload className="w-10 h-10 mx-auto mb-3 text-[#3f3f46]" />
             <p className="text-sm text-[#a1a1aa]">
-              Drop video here or <span className="text-[#f59e0b]">click to browse</span>
+              Drop video here or <span className="text-[#f59e0b] font-medium">click to browse</span>
             </p>
-            <p className="text-xs text-[#52525b] mt-1">.mp4, .avi, .mov</p>
+            <p className="text-xs text-[#3f3f46] mt-1.5 font-data">.mp4  .avi  .mov</p>
           </>
         )}
       </div>
 
       {/* Or enter path manually */}
-      <div className="mt-4">
-        <div className="flex items-center gap-2 mb-2">
-          <div className="flex-1 h-px bg-[#222]" />
-          <span className="text-[10px] text-[#52525b] uppercase tracking-wider">or enter path</span>
-          <div className="flex-1 h-px bg-[#222]" />
+      <div className="mt-5">
+        <div className="flex items-center gap-3 mb-2.5">
+          <div className="flex-1 h-px bg-gradient-to-r from-transparent via-[#222] to-transparent" />
+          <span className="text-[10px] text-[#3f3f46] uppercase tracking-[0.15em] font-data">or enter path</span>
+          <div className="flex-1 h-px bg-gradient-to-r from-transparent via-[#222] to-transparent" />
         </div>
         <input
           type="text"
           placeholder="Server path (e.g., /data/video.mp4)"
           value={videoPath}
           onChange={(e) => { setVideoPath(e.target.value); setFileName('') }}
-          className="w-full bg-[#1a1a1a] border border-[#333] rounded-lg px-4 py-2.5 text-sm text-[#e4e4e7] placeholder-[#52525b] focus:outline-none focus:border-[#f59e0b]/50 font-data"
+          className="w-full bg-[#0f0f14] border border-[#2a2a2a] rounded-lg px-4 py-2.5 text-sm text-[#e4e4e7] placeholder-[#3f3f46] focus:outline-none focus:border-[#f59e0b]/40 font-data transition-colors duration-200"
         />
       </div>
 
       {/* Config toggle */}
       <button
         onClick={() => setShowConfig(!showConfig)}
-        className="flex items-center gap-2 mt-4 text-xs text-[#a1a1aa] hover:text-[#e4e4e7] transition-colors"
+        className="flex items-center gap-2 mt-5 text-xs text-[#52525b] hover:text-[#a1a1aa] transition-colors duration-200"
       >
         <Settings className="w-3.5 h-3.5" />
-        Configuration
+        <span className="tracking-wider uppercase text-[10px] font-medium">Configuration</span>
       </button>
 
       {/* Config panel */}
       {showConfig && (
-        <div className="mt-3 p-4 rounded-lg bg-[#111] border border-[#222] space-y-3">
+        <div className="mt-3 p-4 rounded-lg bg-[#0f0f14] border border-[#222] space-y-3">
           <div className="flex items-center justify-between">
             <label className="text-xs text-[#a1a1aa]">3D Backend</label>
             <div className="flex gap-2">
@@ -158,10 +158,10 @@ export default function VideoUpload() {
                   key={b}
                   onClick={() => setBackend(b)}
                   className={clsx(
-                    'px-3 py-1 rounded text-xs font-data transition-colors',
+                    'px-3 py-1 rounded text-xs font-data transition-all duration-200',
                     backend === b
-                      ? 'bg-[#f59e0b]/20 text-[#f59e0b] border border-[#f59e0b]/30'
-                      : 'bg-[#1a1a1a] text-[#52525b] border border-[#222]',
+                      ? 'bg-[#f59e0b]/15 text-[#f59e0b] border border-[#f59e0b]/25'
+                      : 'bg-[#1a1a1a] text-[#52525b] border border-[#222] hover:border-[#333]',
                   )}
                 >
                   {b === 'vggtx' ? 'VGGT-X' : 'FastVGGT'}
@@ -177,7 +177,7 @@ export default function VideoUpload() {
               onChange={(e) => setInterval(Number(e.target.value))}
               min={1}
               max={100}
-              className="w-20 bg-[#1a1a1a] border border-[#222] rounded px-2 py-1 text-xs text-[#e4e4e7] font-data text-right focus:outline-none focus:border-[#f59e0b]/50"
+              className="w-20 bg-[#1a1a1a] border border-[#222] rounded px-2 py-1 text-xs text-[#e4e4e7] font-data text-right focus:outline-none focus:border-[#f59e0b]/40 transition-colors duration-200"
             />
           </div>
           <div className="flex items-center justify-between">
@@ -185,10 +185,10 @@ export default function VideoUpload() {
             <button
               onClick={() => setSkipVlm(!skipVlm)}
               className={clsx(
-                'px-3 py-1 rounded text-xs font-data transition-colors',
+                'px-3 py-1 rounded text-xs font-data transition-all duration-200',
                 !skipVlm
-                  ? 'bg-[#f59e0b]/20 text-[#f59e0b] border border-[#f59e0b]/30'
-                  : 'bg-[#1a1a1a] text-[#52525b] border border-[#222]',
+                  ? 'bg-[#f59e0b]/15 text-[#f59e0b] border border-[#f59e0b]/25'
+                  : 'bg-[#1a1a1a] text-[#52525b] border border-[#222] hover:border-[#333]',
               )}
             >
               {skipVlm ? 'Disabled' : 'Enabled'}
@@ -202,24 +202,24 @@ export default function VideoUpload() {
                 value={grokKey}
                 onChange={(e) => setGrokKey(e.target.value)}
                 placeholder="xai-..."
-                className="w-full bg-[#1a1a1a] border border-[#222] rounded px-3 py-1.5 text-xs text-[#e4e4e7] font-data focus:outline-none focus:border-[#f59e0b]/50 placeholder-[#52525b]"
+                className="w-full bg-[#1a1a1a] border border-[#222] rounded px-3 py-1.5 text-xs text-[#e4e4e7] font-data focus:outline-none focus:border-[#f59e0b]/40 placeholder-[#3f3f46] transition-colors duration-200"
               />
             </div>
           )}
         </div>
       )}
 
-      {error && <p className="mt-3 text-xs text-red-400">{error}</p>}
+      {error && <p className="mt-3 text-xs text-red-400 font-data">{error}</p>}
 
       {/* Start button */}
       <button
         onClick={handleStart}
         disabled={loading || !videoPath.trim()}
         className={clsx(
-          'w-full mt-6 py-3 rounded-xl font-semibold text-sm tracking-wide uppercase transition-all flex items-center justify-center gap-2',
+          'w-full mt-6 py-3.5 rounded-xl font-bold text-sm tracking-[0.1em] uppercase transition-all duration-300 flex items-center justify-center gap-2.5',
           loading || !videoPath.trim()
-            ? 'bg-[#1a1a1a] text-[#52525b] cursor-not-allowed'
-            : 'bg-[#f59e0b] text-[#0a0a0f] hover:bg-[#fbbf24] glow-amber cursor-pointer',
+            ? 'bg-[#1a1a1a] text-[#3f3f46] cursor-not-allowed border border-[#222]'
+            : 'bg-[#f59e0b] text-[#0a0a0f] hover:bg-[#fbbf24] glow-amber cursor-pointer active:scale-[0.98]',
         )}
       >
         {loading ? (

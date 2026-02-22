@@ -1,4 +1,4 @@
-import { useState, useRef } from 'react'
+import { useState } from 'react'
 import { motion } from 'framer-motion'
 import { usePipelineStore } from '../../store/pipeline'
 import StatusBadge from '../ui/StatusBadge'
@@ -29,19 +29,29 @@ export default function FrameExplorer() {
   return (
     <section id="chapter-scene_graphs" className="py-16 scroll-mt-14 space-y-20">
       <div>
+        {/* Section divider */}
+        <div
+          className="mb-10 h-px"
+          style={{
+            background: 'linear-gradient(90deg, transparent, #333 30%, #f59e0b15 50%, #333 70%, transparent)',
+          }}
+        />
+
         <div className="flex items-center gap-4 mb-2">
-          <h2 className="text-2xl font-semibold text-[#e4e4e7]">
+          <h2 className="text-2xl font-bold tracking-tight text-[#e4e4e7] scan-line">
             3D-Fused Frame Explorer
           </h2>
           <StatusBadge status={sceneGraphStep.status} />
         </div>
-        <p className="text-[#a1a1aa] mb-6 max-w-2xl">
+        <p className="text-[#a1a1aa] text-[15px] mb-6 max-w-2xl leading-relaxed">
           Browse each frame with detection overlays, metric depth, and COLMAP world coordinates. Use the scrubber to navigate.
         </p>
 
         {!hasFullViz && (
           <div className="flex items-center gap-3 py-8">
-            <div className="w-5 h-5 border-2 border-[#52525b] border-t-transparent rounded-full animate-spin" />
+            <div className="relative">
+              <div className="w-5 h-5 border-2 border-[#52525b] border-t-transparent rounded-full animate-spin" />
+            </div>
             <span className="text-[#52525b] text-sm">
               Building scene graphs with 3D coordinates...
             </span>
@@ -54,7 +64,7 @@ export default function FrameExplorer() {
             <button
               onClick={prev}
               disabled={frameIdx === 0}
-              className="p-2.5 rounded-lg bg-[#111] border border-[#222] text-[#a1a1aa] hover:text-[#e4e4e7] disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+              className="p-2.5 rounded-lg bg-[#0f0f14] border border-[#1a1a1a] text-[#52525b] hover:text-[#e4e4e7] hover:border-[#333] disabled:opacity-20 disabled:cursor-not-allowed transition-all duration-200"
             >
               <ChevronLeft className="w-5 h-5" />
             </button>
@@ -65,13 +75,13 @@ export default function FrameExplorer() {
                 max={total - 1}
                 value={frameIdx}
                 onChange={(e) => setFrameIdx(Number(e.target.value))}
-                className="w-full accent-[#f59e0b]"
+                className="w-full"
               />
             </div>
             <button
               onClick={next}
               disabled={frameIdx >= total - 1}
-              className="p-2.5 rounded-lg bg-[#111] border border-[#222] text-[#a1a1aa] hover:text-[#e4e4e7] disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+              className="p-2.5 rounded-lg bg-[#0f0f14] border border-[#1a1a1a] text-[#52525b] hover:text-[#e4e4e7] hover:border-[#333] disabled:opacity-20 disabled:cursor-not-allowed transition-all duration-200"
             >
               <ChevronRight className="w-5 h-5" />
             </button>
@@ -82,7 +92,7 @@ export default function FrameExplorer() {
         )}
 
         {hasFullViz && current && (
-          <div className="text-xs font-data text-[#52525b] mb-2">
+          <div className="text-xs font-data text-[#3f3f46] mb-2">
             {current.timestamp_str} | {current.num_objects} detections
           </div>
         )}
@@ -95,20 +105,20 @@ export default function FrameExplorer() {
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.5 }}
         >
-          <h3 className="text-xl font-semibold text-[#e4e4e7] mb-2">
+          <h3 className="text-xl font-bold text-[#e4e4e7] mb-2 tracking-tight">
             Detection Overlay
           </h3>
-          <p className="text-[#a1a1aa] text-sm mb-4 max-w-2xl">
+          <p className="text-[#a1a1aa] text-sm mb-4 max-w-2xl leading-relaxed">
             Grounding DINO detections with class-colored bounding boxes, confidence scores, and metric depth labels.
           </p>
-          <div className="relative rounded-xl overflow-hidden border border-[#222] bg-black">
+          <div className="relative rounded-xl overflow-hidden border border-[#1a1a1a] bg-black">
             <img
               src={annotatedFrameUrl(runId, frameIdx)}
               alt={`Annotated frame ${frameIdx}`}
               className="w-full object-contain"
               loading="lazy"
             />
-            <div className="absolute top-4 right-4 bg-[#0a0a0f]/80 backdrop-blur-sm px-3 py-1.5 rounded-lg">
+            <div className="absolute top-4 right-4 bg-[#0a0a0f]/80 backdrop-blur-md px-3 py-1.5 rounded-lg border border-[#222]/50">
               <span className="font-data text-sm text-[#f59e0b]">
                 {current.timestamp_str}
               </span>
@@ -124,20 +134,20 @@ export default function FrameExplorer() {
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.5, delay: 0.1 }}
         >
-          <h3 className="text-xl font-semibold text-[#e4e4e7] mb-2">
+          <h3 className="text-xl font-bold text-[#e4e4e7] mb-2 tracking-tight">
             VGGT-X Depth Map
           </h3>
-          <p className="text-[#a1a1aa] text-sm mb-4 max-w-2xl">
+          <p className="text-[#a1a1aa] text-sm mb-4 max-w-2xl leading-relaxed">
             Per-frame metric depth from VGGT-X, plasma colormap. Closer objects appear warmer (yellow), distant objects cooler (purple).
           </p>
-          <div className="relative rounded-xl overflow-hidden border border-[#222] bg-black">
+          <div className="relative rounded-xl overflow-hidden border border-[#1a1a1a] bg-black">
             <img
               src={depthFrameUrl(runId, frameIdx)}
               alt={`Depth map ${frameIdx}`}
               className="w-full object-contain"
               loading="lazy"
             />
-            <div className="absolute top-4 right-4 bg-[#0a0a0f]/80 backdrop-blur-sm px-3 py-1.5 rounded-lg">
+            <div className="absolute top-4 right-4 bg-[#0a0a0f]/80 backdrop-blur-md px-3 py-1.5 rounded-lg border border-[#222]/50">
               <span className="font-data text-sm text-[#06b6d4]">
                 Depth Frame {frameIdx + 1}
               </span>
@@ -153,13 +163,13 @@ export default function FrameExplorer() {
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.5, delay: 0.2 }}
         >
-          <h3 className="text-xl font-semibold text-[#e4e4e7] mb-2">
+          <h3 className="text-xl font-bold text-[#e4e4e7] mb-2 tracking-tight">
             COLMAP World Coordinates
           </h3>
-          <p className="text-[#a1a1aa] text-sm mb-4 max-w-2xl">
+          <p className="text-[#a1a1aa] text-sm mb-4 max-w-2xl leading-relaxed">
             Top-down view of object positions in COLMAP world space. Gold square is the camera, colored dots are detected objects with dashed sightlines.
           </p>
-          <div className="rounded-xl overflow-hidden border border-[#222]">
+          <div className="rounded-xl overflow-hidden border border-[#1a1a1a]">
             <TopDownPanel
               sceneGraph={current}
               cameraPos={camPos}
@@ -210,7 +220,7 @@ function TopDownPanel({ sceneGraph, cameraPos, trajectoryData }: TopDownPanelPro
 
   if (allX.length === 0) {
     return (
-      <div className="aspect-[4/3] flex items-center justify-center text-sm text-[#52525b] bg-[#1a1a1a]">
+      <div className="aspect-[4/3] flex items-center justify-center text-sm text-[#3f3f46] bg-[#0f0f14]">
         No 3D position data available
       </div>
     )
@@ -230,7 +240,7 @@ function TopDownPanel({ sceneGraph, cameraPos, trajectoryData }: TopDownPanelPro
     <svg
       viewBox={`0 0 ${W} ${H}`}
       className="w-full aspect-[4/3]"
-      style={{ background: '#1a1a1a' }}
+      style={{ background: '#0f0f14' }}
     >
       {/* Grid lines */}
       {Array.from({ length: 9 }).map((_, i) => {
@@ -238,8 +248,8 @@ function TopDownPanel({ sceneGraph, cameraPos, trajectoryData }: TopDownPanelPro
         const z = PAD + (i / 8) * (H - 2 * PAD)
         return (
           <g key={i}>
-            <line x1={x} y1={PAD} x2={x} y2={H - PAD} stroke="#222" strokeWidth={0.5} />
-            <line x1={PAD} y1={z} x2={W - PAD} y2={z} stroke="#222" strokeWidth={0.5} />
+            <line x1={x} y1={PAD} x2={x} y2={H - PAD} stroke="#1a1a1a" strokeWidth={0.5} />
+            <line x1={PAD} y1={z} x2={W - PAD} y2={z} stroke="#1a1a1a" strokeWidth={0.5} />
           </g>
         )
       })}
@@ -276,7 +286,7 @@ function TopDownPanel({ sceneGraph, cameraPos, trajectoryData }: TopDownPanelPro
               />
             )}
             <circle cx={px} cy={pz} r={8} fill={color} opacity={0.7} />
-            <text x={px + 12} y={pz + 4} fontSize={11} fill="#ccc" fontFamily="monospace">
+            <text x={px + 12} y={pz + 4} fontSize={11} fill="#999" fontFamily="'JetBrains Mono', monospace">
               {obj.label}
             </text>
           </g>
@@ -297,16 +307,16 @@ function TopDownPanel({ sceneGraph, cameraPos, trajectoryData }: TopDownPanelPro
       )}
 
       {/* Axis labels */}
-      <text x={W / 2} y={H - 15} fontSize={14} fill="#888" textAnchor="middle" fontFamily="monospace">
+      <text x={W / 2} y={H - 15} fontSize={13} fill="#52525b" textAnchor="middle" fontFamily="'JetBrains Mono', monospace">
         X (m)
       </text>
       <text
         x={18}
         y={H / 2}
-        fontSize={14}
-        fill="#888"
+        fontSize={13}
+        fill="#52525b"
         textAnchor="middle"
-        fontFamily="monospace"
+        fontFamily="'JetBrains Mono', monospace"
         transform={`rotate(-90, 18, ${H / 2})`}
       >
         Z (m)

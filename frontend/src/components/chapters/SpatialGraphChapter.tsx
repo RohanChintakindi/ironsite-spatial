@@ -29,29 +29,29 @@ export default function SpatialGraphChapter() {
         <div className="space-y-8">
           {/* Stats cards */}
           <div className="grid grid-cols-4 gap-4">
-            <div className="bg-[#111] rounded-lg p-4 border border-[#222] text-center">
-              <p className="text-xs text-[#52525b] uppercase tracking-wider mb-1">Nodes</p>
-              <AnimatedNumber value={stats?.total_nodes ?? graphData.nodes.length} className="text-2xl text-[#e4e4e7]" />
+            <div className="bg-[#0f0f14] rounded-lg p-4 border border-[#1a1a1a] text-center card-highlight card-glow">
+              <p className="text-[10px] text-[#52525b] uppercase tracking-[0.12em] font-data mb-2">Nodes</p>
+              <AnimatedNumber value={stats?.total_nodes ?? graphData.nodes.length} className="text-2xl font-bold text-[#e4e4e7]" />
             </div>
-            <div className="bg-[#111] rounded-lg p-4 border border-[#222] text-center">
-              <p className="text-xs text-[#52525b] uppercase tracking-wider mb-1">Edges</p>
-              <AnimatedNumber value={stats?.total_edges ?? graphData.edges.length} className="text-2xl text-[#e4e4e7]" />
+            <div className="bg-[#0f0f14] rounded-lg p-4 border border-[#1a1a1a] text-center card-highlight card-glow">
+              <p className="text-[10px] text-[#52525b] uppercase tracking-[0.12em] font-data mb-2">Edges</p>
+              <AnimatedNumber value={stats?.total_edges ?? graphData.edges.length} className="text-2xl font-bold text-[#e4e4e7]" />
             </div>
-            <div className="bg-[#111] rounded-lg p-4 border border-[#222] text-center">
-              <p className="text-xs text-[#52525b] uppercase tracking-wider mb-1">Objects</p>
-              <AnimatedNumber value={objectNodes.length} className="text-2xl text-[#f59e0b]" />
+            <div className="bg-[#0f0f14] rounded-lg p-4 border border-[#1a1a1a] text-center card-highlight card-glow">
+              <p className="text-[10px] text-[#52525b] uppercase tracking-[0.12em] font-data mb-2">Objects</p>
+              <AnimatedNumber value={objectNodes.length} className="text-2xl font-bold text-[#f59e0b]" />
             </div>
-            <div className="bg-[#111] rounded-lg p-4 border border-[#222] text-center">
-              <p className="text-xs text-[#52525b] uppercase tracking-wider mb-1">Frames</p>
-              <AnimatedNumber value={frameNodes.length} className="text-2xl text-[#06b6d4]" />
+            <div className="bg-[#0f0f14] rounded-lg p-4 border border-[#1a1a1a] text-center card-highlight card-glow">
+              <p className="text-[10px] text-[#52525b] uppercase tracking-[0.12em] font-data mb-2">Frames</p>
+              <AnimatedNumber value={frameNodes.length} className="text-2xl font-bold text-[#06b6d4]" />
             </div>
           </div>
 
           {/* Relationship breakdown */}
           {stats?.edge_types && Object.keys(stats.edge_types).length > 0 && (
             <div>
-              <h3 className="text-lg font-semibold text-[#e4e4e7] mb-4">Relationship Types</h3>
-              <div className="bg-[#111] rounded-lg border border-[#222] p-5 space-y-3">
+              <h3 className="text-lg font-bold text-[#e4e4e7] tracking-tight mb-4">Relationship Types</h3>
+              <div className="bg-[#0f0f14] rounded-lg border border-[#1a1a1a] p-5 space-y-3">
                 {Object.entries(stats.edge_types)
                   .sort(([, a], [, b]) => b - a)
                   .map(([rel, count]) => {
@@ -77,7 +77,7 @@ export default function SpatialGraphChapter() {
 
           {/* Object nodes */}
           <div>
-            <h3 className="text-lg font-semibold text-[#e4e4e7] mb-4">Tracked Objects</h3>
+            <h3 className="text-lg font-bold text-[#e4e4e7] tracking-tight mb-4">Tracked Objects</h3>
             <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
               {objectNodes.map((node) => {
                 const connections = spatialEdges.filter(
@@ -107,8 +107,8 @@ export default function SpatialGraphChapter() {
           {/* Top spatial relations */}
           {spatialEdges.length > 0 && (
             <div>
-              <h3 className="text-lg font-semibold text-[#e4e4e7] mb-4">Spatial Relations</h3>
-              <div className="bg-[#111] rounded-lg border border-[#222] overflow-hidden">
+              <h3 className="text-lg font-bold text-[#e4e4e7] tracking-tight mb-4">Spatial Relations</h3>
+              <div className="bg-[#0f0f14] rounded-lg border border-[#1a1a1a] overflow-hidden">
                 <div className="max-h-64 overflow-y-auto">
                   {spatialEdges
                     .sort((a, b) => b.weight - a.weight)

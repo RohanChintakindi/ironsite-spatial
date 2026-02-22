@@ -10,7 +10,7 @@ export default function StoryContainer({ children }: StoryContainerProps) {
 
   return (
     <main
-      className="pt-14"
+      className="pt-14 story-transition"
       style={{ marginLeft: hasStarted ? '14rem' : '0' }}
     >
       <div className="max-w-6xl mx-auto px-6 lg:px-12">

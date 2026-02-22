@@ -21,7 +21,7 @@ export default function App() {
   useStepData()
 
   return (
-    <div className="min-h-screen bg-[#0a0a0f]">
+    <div className="min-h-screen bg-[#0a0a0f] grain">
       <Header />
       <Sidebar />
       <StoryContainer>

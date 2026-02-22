@@ -18,26 +18,26 @@ export default function SceneGraphs() {
       {sceneGraphs && current && (
         <div className="grid grid-cols-[200px_1fr] gap-4">
           {/* Frame list */}
-          <div className="bg-[#111] rounded-lg border border-[#222] overflow-y-auto max-h-[500px]">
+          <div className="bg-[#0f0f14] rounded-lg border border-[#1a1a1a] overflow-y-auto max-h-[500px]">
             {sceneGraphs.map((sg, i) => (
               <button
                 key={i}
                 onClick={() => setSelectedIdx(i)}
-                className={`w-full px-3 py-2 text-left text-xs font-data border-b border-[#222] transition-colors ${
+                className={`w-full px-3 py-2.5 text-left text-xs font-data border-b border-[#1a1a1a] transition-all duration-200 ${
                   i === selectedIdx
-                    ? 'bg-[#f59e0b]/10 text-[#f59e0b]'
-                    : 'text-[#a1a1aa] hover:bg-[#1a1a1a]'
+                    ? 'bg-[#f59e0b]/8 text-[#f59e0b] border-l-2 border-l-[#f59e0b]'
+                    : 'text-[#a1a1aa] hover:bg-[#111] border-l-2 border-l-transparent'
                 }`}
               >
                 Frame {sg.frame_index} | {sg.timestamp_str}
-                <span className="ml-2 text-[#52525b]">{sg.num_objects} obj</span>
+                <span className="ml-2 text-[#3f3f46]">{sg.num_objects} obj</span>
               </button>
             ))}
           </div>
 
           {/* JSON viewer */}
-          <div className="bg-[#111] rounded-lg border border-[#222] p-4 overflow-auto max-h-[500px]">
-            <pre className="text-xs font-data text-[#a1a1aa] whitespace-pre-wrap">
+          <div className="bg-[#0f0f14] rounded-lg border border-[#1a1a1a] p-4 overflow-auto max-h-[500px]">
+            <pre className="text-xs font-data text-[#a1a1aa] whitespace-pre-wrap leading-relaxed">
               {JSON.stringify(current, null, 2)}
             </pre>
           </div>

@@ -81,8 +81,8 @@ export default function QueryPanel() {
           <div
             key={i}
             className={clsx(
-              'rounded-lg border bg-[#111] transition-all',
-              isExpanded ? 'border-[#f59e0b]/30' : 'border-[#222]',
+              'rounded-lg border bg-[#0f0f14] transition-all',
+              isExpanded ? 'border-[#f59e0b]/30' : 'border-[#1a1a1a]',
             )}
           >
             <button
@@ -106,7 +106,7 @@ export default function QueryPanel() {
             </button>
 
             {isExpanded && result && result.entries.length > 0 && (
-              <div className="px-4 pb-3 border-t border-[#222] pt-3 max-h-48 overflow-y-auto">
+              <div className="px-4 pb-3 border-t border-[#1a1a1a] pt-3 max-h-48 overflow-y-auto">
                 {result.entries.slice(0, 5).map((entry, j) => (
                   <div key={j} className="text-xs font-data text-[#a1a1aa] mb-2 p-2 rounded bg-[#1a1a1a]">
                     <span className="text-[#06b6d4]">Frame {String(entry.frame_idx)}</span>

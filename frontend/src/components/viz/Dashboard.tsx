@@ -51,7 +51,7 @@ function DetectionsPerClass({ data }: { data: Record<string, number> }) {
   )
 
   return (
-    <div className="rounded-xl border border-[#222] bg-[#0d0d0d] p-4">
+    <div className="rounded-xl border border-[#1a1a1a] bg-[#0d0d12] p-4">
       <div className="text-xs font-data text-white mb-3">Detections per Class</div>
       <ResponsiveContainer width="100%" height={220}>
         <BarChart data={sorted} layout="vertical" margin={{ left: 80, right: 20, top: 0, bottom: 0 }}>
@@ -65,7 +65,7 @@ function DetectionsPerClass({ data }: { data: Record<string, number> }) {
             width={75}
           />
           <Tooltip
-            contentStyle={{ background: '#111', border: '1px solid #333', borderRadius: 8, fontSize: 11 }}
+            contentStyle={{ background: '#111', border: '1px solid #1a1a1a', borderRadius: 8, fontSize: 11 }}
             labelStyle={{ color: '#e4e4e7' }}
           />
           <Bar dataKey="count" radius={[0, 4, 4, 0]}>
@@ -98,7 +98,7 @@ function DepthHistogram({ depths }: { depths: number[] }) {
   }, [depths])
 
   return (
-    <div className="rounded-xl border border-[#222] bg-[#0d0d0d] p-4">
+    <div className="rounded-xl border border-[#1a1a1a] bg-[#0d0d12] p-4">
       <div className="text-xs font-data text-white mb-3">Depth Distribution (m)</div>
       <ResponsiveContainer width="100%" height={220}>
         <BarChart data={bins} margin={{ left: 10, right: 10, top: 0, bottom: 0 }}>
@@ -114,7 +114,7 @@ function DepthHistogram({ depths }: { depths: number[] }) {
             axisLine={{ stroke: '#333' }}
           />
           <Tooltip
-            contentStyle={{ background: '#111', border: '1px solid #333', borderRadius: 8, fontSize: 11 }}
+            contentStyle={{ background: '#111', border: '1px solid #1a1a1a', borderRadius: 8, fontSize: 11 }}
           />
           <Bar dataKey="count" fill="#3fa7ff" opacity={0.85} radius={[2, 2, 0, 0]} />
         </BarChart>
@@ -137,7 +137,7 @@ function DepthOverTime({ data }: { data: { label: string; depth: number; time_id
   const filtered = data.filter((d) => topClasses.includes(d.label))
 
   return (
-    <div className="rounded-xl border border-[#222] bg-[#0d0d0d] p-4">
+    <div className="rounded-xl border border-[#1a1a1a] bg-[#0d0d12] p-4">
       <div className="text-xs font-data text-white mb-3">Object Depth over Time</div>
       <ResponsiveContainer width="100%" height={220}>
         <ScatterChart margin={{ left: 10, right: 10, top: 0, bottom: 0 }}>
@@ -155,7 +155,7 @@ function DepthOverTime({ data }: { data: { label: string; depth: number; time_id
             axisLine={{ stroke: '#333' }}
           />
           <Tooltip
-            contentStyle={{ background: '#111', border: '1px solid #333', borderRadius: 8, fontSize: 11 }}
+            contentStyle={{ background: '#111', border: '1px solid #1a1a1a', borderRadius: 8, fontSize: 11 }}
           />
           <Scatter data={filtered} opacity={0.5}>
             {filtered.map((entry, i) => (
@@ -190,7 +190,7 @@ function SpatialHeatmap({
 
   if (!data?.counts || data.counts.length === 0) {
     return (
-      <div className="rounded-xl border border-[#222] bg-[#0d0d0d] p-4">
+      <div className="rounded-xl border border-[#1a1a1a] bg-[#0d0d12] p-4">
         <div className="text-xs font-data text-white mb-3">Spatial Heatmap (X vs Z)</div>
         <div className="h-[220px] flex items-center justify-center text-xs text-[#52525b]">
           No spatial data available
@@ -227,7 +227,7 @@ function SpatialHeatmap({
   const sz = (z: number) => PAD + ((z - zMin) / zRange) * (H - 2 * PAD)
 
   return (
-    <div className="rounded-xl border border-[#222] bg-[#0d0d0d] p-4">
+    <div className="rounded-xl border border-[#1a1a1a] bg-[#0d0d12] p-4">
       <div className="text-xs font-data text-white mb-3">Spatial Heatmap (X vs Z)</div>
       <svg viewBox={`0 0 ${W} ${H}`} className="w-full">
         {/* Heatmap cells */}

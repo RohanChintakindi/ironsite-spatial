@@ -1,4 +1,4 @@
-import Chapter from '../layout/Chapter'
+import { motion } from 'framer-motion'
 import { usePipelineStore } from '../../store/pipeline'
 import AnimatedNumber from '../ui/AnimatedNumber'
 import { Download } from 'lucide-react'
@@ -15,9 +15,22 @@ export default function Summary() {
   const totalObjects = sceneGraphs?.reduce((sum, sg) => sum + sg.num_objects, 0) ?? 0
 
   return (
-    <section className="py-16 border-t border-[#222] mt-8">
-      <h2 className="text-2xl font-semibold text-[#e4e4e7] mb-2">Pipeline Complete</h2>
-      <p className="text-[#a1a1aa] mb-8">
+    <motion.section
+      initial={{ opacity: 0, y: 24 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.7, ease: [0.16, 1, 0.3, 1] }}
+      className="py-16 mt-8"
+    >
+      {/* Section divider */}
+      <div
+        className="mb-10 h-px"
+        style={{
+          background: 'linear-gradient(90deg, transparent, #f59e0b30 50%, transparent)',
+        }}
+      />
+
+      <h2 className="text-2xl font-bold tracking-tight text-[#e4e4e7] mb-2 scan-line">Pipeline Complete</h2>
+      <p className="text-[#a1a1aa] text-[15px] mb-8 leading-relaxed">
         Full spatial awareness pipeline finished successfully.
       </p>
 
@@ -52,7 +65,7 @@ export default function Summary() {
           filename="dashboard.json"
         />
       </div>
-    </section>
+    </motion.section>
   )
 }
 
@@ -68,13 +81,13 @@ function StatCard({
   suffix?: string
 }) {
   return (
-    <div className="bg-[#111] rounded-lg p-5 border border-[#222] text-center">
-      <div className="text-xs text-[#52525b] uppercase tracking-wider mb-2">{label}</div>
+    <div className="bg-[#0f0f14] rounded-lg p-5 border border-[#1a1a1a] text-center card-highlight card-glow">
+      <div className="text-[10px] text-[#52525b] uppercase tracking-[0.12em] font-data mb-2">{label}</div>
       <AnimatedNumber
         value={value}
         decimals={decimals}
         suffix={suffix}
-        className="text-3xl text-[#f59e0b]"
+        className="text-3xl font-bold text-[#f59e0b]"
       />
     </div>
   )
@@ -93,7 +106,7 @@ function ExportButton({
     <a
       href={href}
       download={filename}
-      className="flex items-center gap-2 px-4 py-2 rounded-lg bg-[#111] border border-[#222] text-sm text-[#a1a1aa] hover:text-[#e4e4e7] hover:border-[#333] transition-colors"
+      className="flex items-center gap-2 px-4 py-2.5 rounded-lg bg-[#0f0f14] border border-[#1a1a1a] text-sm text-[#a1a1aa] hover:text-[#e4e4e7] hover:border-[#333] hover:bg-[#111] transition-all duration-200"
     >
       <Download className="w-4 h-4" />
       {label}

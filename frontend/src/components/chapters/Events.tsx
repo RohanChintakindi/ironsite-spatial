@@ -114,25 +114,25 @@ export default function Events() {
         <div className="space-y-10">
           {/* Section A: Productivity Overview */}
           <div>
-            <h3 className="text-lg font-semibold text-[#e4e4e7] mb-4">Productivity Overview</h3>
+            <h3 className="text-lg font-bold text-[#e4e4e7] tracking-tight mb-4">Productivity Overview</h3>
             <div className="grid grid-cols-5 gap-4">
-              <div className="bg-[#111] rounded-lg p-4 border border-[#222] text-center">
+              <div className="bg-[#0f0f14] rounded-lg p-4 border border-[#1a1a1a] text-center card-highlight card-glow">
                 <p className="text-xs text-[#52525b] uppercase tracking-wider mb-1">Production</p>
                 <p className="text-2xl font-data text-[#22c55e]">{eventsData.stats.production_pct.toFixed(0)}%</p>
               </div>
-              <div className="bg-[#111] rounded-lg p-4 border border-[#222] text-center">
+              <div className="bg-[#0f0f14] rounded-lg p-4 border border-[#1a1a1a] text-center card-highlight card-glow">
                 <p className="text-xs text-[#52525b] uppercase tracking-wider mb-1">Prep</p>
                 <p className="text-2xl font-data text-[#f59e0b]">{eventsData.stats.prep_pct.toFixed(0)}%</p>
               </div>
-              <div className="bg-[#111] rounded-lg p-4 border border-[#222] text-center">
+              <div className="bg-[#0f0f14] rounded-lg p-4 border border-[#1a1a1a] text-center card-highlight card-glow">
                 <p className="text-xs text-[#52525b] uppercase tracking-wider mb-1">Downtime</p>
                 <p className="text-2xl font-data text-[#ef4444]">{eventsData.stats.downtime_pct.toFixed(0)}%</p>
               </div>
-              <div className="bg-[#111] rounded-lg p-4 border border-[#222] text-center">
+              <div className="bg-[#0f0f14] rounded-lg p-4 border border-[#1a1a1a] text-center card-highlight card-glow">
                 <p className="text-xs text-[#52525b] uppercase tracking-wider mb-1">Distance</p>
                 <p className="text-2xl font-data text-[#e4e4e7]">{eventsData.stats.distance_traveled_m.toFixed(1)}m</p>
               </div>
-              <div className="bg-[#111] rounded-lg p-4 border border-[#f59e0b]/30 text-center">
+              <div className="bg-[#111] rounded-lg p-4 border border-[#f59e0b]/20 text-center card-glow">
                 <p className="text-xs text-[#52525b] uppercase tracking-wider mb-1">Efficiency</p>
                 <p className="text-2xl font-data text-[#f59e0b]">{eventsData.performance.efficiency.overall_score.toFixed(0)}<span className="text-sm text-[#52525b]">/100</span></p>
               </div>
@@ -141,8 +141,8 @@ export default function Events() {
 
           {/* Section B: Activity Timeline */}
           <div>
-            <h3 className="text-lg font-semibold text-[#e4e4e7] mb-4">Activity Timeline</h3>
-            <div className="bg-[#111] rounded-lg p-4 border border-[#222]">
+            <h3 className="text-lg font-bold text-[#e4e4e7] tracking-tight mb-4">Activity Timeline</h3>
+            <div className="bg-[#0f0f14] rounded-lg p-4 border border-[#1a1a1a]">
               <Timeline segments={eventsData.timeline} />
             </div>
           </div>
@@ -151,8 +151,8 @@ export default function Events() {
           <div className="grid grid-cols-2 gap-6">
             {/* Left: Performance */}
             <div>
-              <h3 className="text-lg font-semibold text-[#e4e4e7] mb-4">Performance</h3>
-              <div className="bg-[#111] rounded-lg p-5 border border-[#222] space-y-4">
+              <h3 className="text-lg font-bold text-[#e4e4e7] tracking-tight mb-4">Performance</h3>
+              <div className="bg-[#0f0f14] rounded-lg p-5 border border-[#1a1a1a] space-y-4">
                 <ScoreBar label="Production" score={eventsData.performance.efficiency.production_score} color="#22c55e" />
                 <ScoreBar label="Movement" score={eventsData.performance.efficiency.movement_score} color="#3b82f6" />
                 <ScoreBar label="Continuity" score={eventsData.performance.efficiency.continuity_score} color="#8b5cf6" />
@@ -201,8 +201,8 @@ export default function Events() {
 
             {/* Right: PPE */}
             <div>
-              <h3 className="text-lg font-semibold text-[#e4e4e7] mb-4">PPE Compliance</h3>
-              <div className="bg-[#111] rounded-lg p-5 border border-[#222] space-y-4">
+              <h3 className="text-lg font-bold text-[#e4e4e7] tracking-tight mb-4">PPE Compliance</h3>
+              <div className="bg-[#0f0f14] rounded-lg p-5 border border-[#1a1a1a] space-y-4">
                 <PPEBar label="Vest" pct={eventsData.ppe_report.vest_visible_pct} />
                 <PPEBar label="Helmet" pct={eventsData.ppe_report.helmet_visible_pct} />
                 <PPEBar label="Gloves" pct={eventsData.ppe_report.gloves_visible_pct} />

@@ -42,12 +42,12 @@ export default function Preprocessing() {
             ].map((stat) => (
               <div
                 key={stat.label}
-                className="bg-[#111] rounded-lg p-5 border border-[#222]"
+                className="bg-[#0f0f14] rounded-lg p-5 border border-[#1a1a1a] card-highlight card-glow"
               >
-                <div className="text-xs text-[#52525b] uppercase tracking-wider mb-1">
+                <div className="text-[10px] text-[#52525b] uppercase tracking-[0.12em] font-data mb-2">
                   {stat.label}
                 </div>
-                <div className="text-2xl text-[#e4e4e7]">
+                <div className="text-2xl font-bold text-[#e4e4e7]">
                   {stat.custom ? (
                     <span className="font-data">{stat.custom}</span>
                   ) : (
@@ -63,20 +63,20 @@ export default function Preprocessing() {
           </div>
 
           {/* Large single-frame viewer with navigation */}
-          <div className="relative rounded-xl overflow-hidden border border-[#222] bg-[#111]">
+          <div className="relative rounded-xl overflow-hidden border border-[#1a1a1a] bg-black group">
             <img
               src={frameUrl(runId, frameIdx)}
               alt={`Undistorted keyframe ${frameIdx}`}
               className="w-full aspect-video object-contain bg-black"
             />
             {/* Timestamp badge */}
-            <div className="absolute top-4 right-4 bg-[#0a0a0f]/80 backdrop-blur-sm px-3 py-1.5 rounded-lg">
+            <div className="absolute top-4 right-4 bg-[#0a0a0f]/80 backdrop-blur-md px-3 py-1.5 rounded-lg border border-[#222]/50">
               <span className="font-data text-sm text-[#f59e0b]">
                 t={formatTimestamp(data.timestamps[frameIdx] ?? 0)}
               </span>
             </div>
             {/* Frame counter */}
-            <div className="absolute bottom-4 left-4 bg-[#0a0a0f]/80 backdrop-blur-sm px-3 py-1.5 rounded-lg">
+            <div className="absolute bottom-4 left-4 bg-[#0a0a0f]/80 backdrop-blur-md px-3 py-1.5 rounded-lg border border-[#222]/50">
               <span className="font-data text-sm text-[#a1a1aa]">
                 Frame {frameIdx + 1} / {totalFrames}
               </span>
@@ -88,7 +88,7 @@ export default function Preprocessing() {
             <button
               onClick={prev}
               disabled={frameIdx === 0}
-              className="p-2.5 rounded-lg bg-[#111] border border-[#222] text-[#a1a1aa] hover:text-[#e4e4e7] disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+              className="p-2.5 rounded-lg bg-[#0f0f14] border border-[#1a1a1a] text-[#52525b] hover:text-[#e4e4e7] hover:border-[#333] disabled:opacity-20 disabled:cursor-not-allowed transition-all duration-200"
             >
               <ChevronLeft className="w-5 h-5" />
             </button>
@@ -99,13 +99,13 @@ export default function Preprocessing() {
                 max={totalFrames - 1}
                 value={frameIdx}
                 onChange={(e) => setFrameIdx(Number(e.target.value))}
-                className="w-full accent-[#f59e0b]"
+                className="w-full"
               />
             </div>
             <button
               onClick={next}
               disabled={frameIdx >= totalFrames - 1}
-              className="p-2.5 rounded-lg bg-[#111] border border-[#222] text-[#a1a1aa] hover:text-[#e4e4e7] disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+              className="p-2.5 rounded-lg bg-[#0f0f14] border border-[#1a1a1a] text-[#52525b] hover:text-[#e4e4e7] hover:border-[#333] disabled:opacity-20 disabled:cursor-not-allowed transition-all duration-200"
             >
               <ChevronRight className="w-5 h-5" />
             </button>
