@@ -77,7 +77,7 @@ def run_inference(model, vgg_input, device="cuda"):
     hb = threading.Thread(target=heartbeat, daemon=True)
     hb.start()
 
-    with torch.no_grad():
+    with torch.no_grad(), torch.cuda.amp.autocast(dtype=torch.bfloat16):
         predictions = model(images_batch)
 
     done.set()
