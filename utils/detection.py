@@ -10,7 +10,7 @@ import numpy as np
 
 sys.path.insert(0, "Grounded-SAM-2")
 
-TRACK_CHUNK_SIZE = 100  # frames per tracking chunk
+from config import TRACK_CHUNK_SIZE
 
 
 def load_models(device, sam2_checkpoint, sam2_config):
