@@ -93,13 +93,27 @@ def save_depth_maps(depth_np, depth_conf, image_paths, output_dir, conf_thresh=3
     depth_dir = os.path.join(output_dir, "estimated_depths")
     os.makedirs(depth_dir, exist_ok=True)
 
-    # Confidence filtering
+    # Print raw stats before any filtering
+    valid_depth = depth_np[np.isfinite(depth_np)]
+    print(f"  Raw depth stats: min={valid_depth.min():.4f} max={valid_depth.max():.4f} "
+          f"median={np.median(valid_depth):.4f}")
     if depth_conf is not None:
-        mask = depth_conf < conf_thresh
-        depth_filtered = depth_np.copy()
-        depth_filtered[mask] = np.nan
-    else:
-        depth_filtered = depth_np
+        valid_conf = depth_conf[np.isfinite(depth_conf)]
+        print(f"  Confidence stats: min={valid_conf.min():.4f} max={valid_conf.max():.4f} "
+              f"median={np.median(valid_conf):.4f}")
+        pct_above = (valid_conf >= conf_thresh).sum() / len(valid_conf) * 100
+        print(f"  Conf >= {conf_thresh}: {pct_above:.1f}%")
+
+    # Only filter if it wouldn't kill all the data
+    depth_filtered = depth_np.copy()
+    if depth_conf is not None:
+        pct_kept = (depth_conf >= conf_thresh).sum() / depth_conf.size * 100
+        if pct_kept > 10:
+            mask = depth_conf < conf_thresh
+            depth_filtered[mask] = np.nan
+            print(f"  Confidence filtering: keeping {pct_kept:.1f}% of pixels")
+        else:
+            print(f"  Skipping confidence filter (would keep only {pct_kept:.1f}%)")
 
     for i, img_path in enumerate(image_paths):
         stem = Path(img_path).stem
