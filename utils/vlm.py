@@ -1,7 +1,12 @@
 """
-VLM Reasoning: send scene graphs to Grok for activity analysis.
+VLM Reasoning: send structured graph context + frame images to Grok.
+
+Supports multimodal (vision) when keyframes are provided, falls back to
+text-only structured graph context.
 """
 
+import base64
+import io
 import json
 import numpy as np
 from openai import OpenAI
@@ -9,11 +14,15 @@ from openai import OpenAI
 
 SYSTEM_PROMPT = """You are analyzing spatial scene data from a construction worker's chest-mounted body camera.
 
-The data is a sequence of scene graph snapshots at different timestamps. Each contains:
-- Detected objects with class, metric depth (meters), 3D position, and screen region
-- Spatial relations between objects (near, contacting, left_of, above, etc.)
-- Hand state: what the worker's hands are holding ("free" or object ID)
-- Camera position: the worker's location in 3D space
+You receive:
+1. A structured spatial graph showing objects detected at each timestamp with their 3D positions (in meters), spatial relations, and the worker's camera position.
+2. Key frame images from the most interesting moments (highest object interaction).
+
+Relation types:
+- VERY_NEAR (<1m), NEAR (1-3m), FAR (>3m) — metric 3D distance
+- LEFT_OF, RIGHT_OF, ABOVE, BELOW — spatial arrangement
+- CONTACTING — mask overlap (physical contact)
+- HELD_BY — hand holding an object
 
 Your task:
 1. ACTIVITY TIMELINE: For each time segment, classify the activity:
@@ -22,11 +31,11 @@ Your task:
    - "downtime" = idle, waiting, standing around
    - "standby" = on-site but not at workstation
 
-2. SPECIFIC ACTIONS: Describe what the worker is doing at each segment.
+2. SPECIFIC ACTIONS: Describe what the worker is doing at each segment. Use the images to confirm object identities and actions.
 
 3. PRODUCTIVITY METRICS:
    - Total active work time vs idle time
-   - Objects interacted with
+   - Objects interacted with (from HELD_BY and CONTACTING relations)
    - Distance traveled (from camera positions)
    - Estimated blocks placed (if masonry work)
 
@@ -41,46 +50,119 @@ Output as JSON with this structure:
 }"""
 
 
+def _frame_to_base64(frame_rgb, max_size=768):
+    """Encode RGB numpy array as base64 JPEG, resized for API efficiency."""
+    from PIL import Image
+    img = Image.fromarray(frame_rgb)
+
+    # Resize if too large
+    w, h = img.size
+    if max(w, h) > max_size:
+        scale = max_size / max(w, h)
+        img = img.resize((int(w * scale), int(h * scale)), Image.LANCZOS)
+
+    buf = io.BytesIO()
+    img.save(buf, format="JPEG", quality=80)
+    return base64.b64encode(buf.getvalue()).decode("utf-8")
+
+
 def run_vlm_analysis(scene_graphs, video_path, api_key, model="grok-3-fast",
                      base_url="https://api.x.ai/v1", num_samples=30,
-                     temperature=0.3, max_tokens=4000):
+                     temperature=0.3, max_tokens=4000,
+                     spatial_graph=None, keyframes=None, num_images=5):
+    """Run VLM analysis with structured graph context and optional frame images.
+
+    Args:
+        spatial_graph: SpatialGraph instance (from utils.graph). If provided,
+            uses structured graph serialization instead of raw JSON.
+        keyframes: List of RGB numpy arrays. If provided with spatial_graph,
+            sends the most interesting frames as images (multimodal).
+        num_images: Number of frame images to send (default 5).
+    """
     client = OpenAI(api_key=api_key, base_url=base_url)
 
-    # Sample scene graphs evenly across the video
-    indices = np.linspace(0, len(scene_graphs) - 1, min(num_samples, len(scene_graphs)), dtype=int)
-    sampled = [scene_graphs[i] for i in indices]
+    # Build context: prefer graph serialization, fall back to raw JSON
+    if spatial_graph is not None:
+        graph_text = spatial_graph.serialize_for_vlm(max_frames=num_samples)
+        context_str = graph_text
+        context_type = "graph"
+    else:
+        # Legacy: raw JSON
+        indices = np.linspace(0, len(scene_graphs) - 1,
+                              min(num_samples, len(scene_graphs)), dtype=int)
+        sampled = [scene_graphs[i] for i in indices]
+        compact = []
+        for sg in sampled:
+            compact.append({
+                "t": sg["timestamp_str"],
+                "objects": [
+                    {"id": o["id_str"], "class": o["label"], "depth_m": o["depth_m"],
+                     "pos": o["position_3d"], "region": o["region"]}
+                    for o in sg["objects"]
+                ],
+                "relations": sg["spatial_relations"],
+                "hands": sg["hand_state"],
+                "cam_pos": sg["camera_pose"]["position"] if sg["camera_pose"] else None,
+            })
+        context_str = json.dumps(compact, default=str)
+        context_type = "json"
 
-    # Compact format to save tokens
-    compact = []
-    for sg in sampled:
-        compact.append({
-            "t": sg["timestamp_str"],
-            "objects": [
-                {"id": o["id_str"], "class": o["label"], "depth_m": o["depth_m"],
-                 "pos": o["position_3d"], "region": o["region"]}
-                for o in sg["objects"]
-            ],
-            "relations": sg["spatial_relations"],
-            "hands": sg["hand_state"],
-            "cam_pos": sg["camera_pose"]["position"] if sg["camera_pose"] else None,
-        })
+    # Build multimodal message content
+    content_parts = []
 
-    user_prompt = (
-        f"Analyze this construction worker's activity from {len(compact)} scene graph "
-        f"snapshots spanning the full video:\n\n"
-        f"{json.dumps(compact, default=str)}\n\n"
-        f"The video filename suggests this is: {video_path}\n"
-        f"Provide your full analysis."
-    )
+    # Add frame images if available
+    image_frame_indices = []
+    if keyframes is not None and spatial_graph is not None:
+        interesting = spatial_graph.get_interesting_frames(top_k=num_images)
+        if not interesting:
+            # Fall back to evenly spaced
+            interesting = np.linspace(0, len(keyframes) - 1, num_images, dtype=int).tolist()
 
-    estimated_tokens = len(json.dumps(compact)) // 4
-    print(f"Sending {len(compact)} scene graphs to {model} (~{estimated_tokens} tokens)...")
+        for fi in interesting:
+            if 0 <= fi < len(keyframes):
+                b64 = _frame_to_base64(keyframes[fi])
+                ts_str = scene_graphs[fi]["timestamp_str"] if fi < len(scene_graphs) else "?"
+                content_parts.append({
+                    "type": "text",
+                    "text": f"[Frame {fi} at t={ts_str}]"
+                })
+                content_parts.append({
+                    "type": "image_url",
+                    "image_url": {"url": f"data:image/jpeg;base64,{b64}"}
+                })
+                image_frame_indices.append(fi)
+
+        print(f"  Sending {len(image_frame_indices)} frame images (frames: {image_frame_indices})")
+
+    # Add text context
+    if context_type == "graph":
+        text_prompt = (
+            f"Analyze this construction worker's activity from structured spatial graph data "
+            f"spanning the full video.\n\n"
+            f"SPATIAL GRAPH (each line = object at timestamp with relations):\n"
+            f"{context_str}\n\n"
+            f"Video: {video_path}\n"
+            f"Provide your full analysis as JSON."
+        )
+    else:
+        text_prompt = (
+            f"Analyze this construction worker's activity from {len(json.loads(context_str))} "
+            f"scene graph snapshots spanning the full video:\n\n"
+            f"{context_str}\n\n"
+            f"Video: {video_path}\n"
+            f"Provide your full analysis as JSON."
+        )
+
+    content_parts.append({"type": "text", "text": text_prompt})
+
+    estimated_tokens = len(context_str) // 4
+    print(f"  Sending {context_type} context to {model} (~{estimated_tokens} text tokens)")
 
     response = client.chat.completions.create(
         model=model,
         messages=[
             {"role": "system", "content": SYSTEM_PROMPT},
-            {"role": "user", "content": user_prompt},
+            {"role": "user", "content": content_parts},
         ],
         temperature=temperature,
         max_tokens=max_tokens,
@@ -92,9 +174,15 @@ def run_vlm_analysis(scene_graphs, video_path, api_key, model="grok-3-fast",
     print("=" * 60)
     print(result)
 
-    # Try to parse JSON
+    # Try to parse JSON (handle markdown code blocks)
+    json_str = result
+    if "```json" in json_str:
+        json_str = json_str.split("```json")[1].split("```")[0].strip()
+    elif "```" in json_str:
+        json_str = json_str.split("```")[1].split("```")[0].strip()
+
     try:
-        analysis = json.loads(result)
+        analysis = json.loads(json_str)
         if "summary" in analysis:
             s = analysis["summary"]
             print(f"\n--- Summary ---")

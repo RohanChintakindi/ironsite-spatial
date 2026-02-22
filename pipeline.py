@@ -26,6 +26,7 @@ from utils.preprocess import extract_keyframes
 from utils.detection import run_dino_detections, run_sam2_tracking
 from utils.depth import run_full_3d_pipeline
 from utils.scene_graph import build_scene_graphs
+from utils.graph import SpatialGraph
 from utils.memory import SpatialMemory
 from utils.vlm import run_vlm_analysis
 from utils.visualize import (
@@ -215,6 +216,20 @@ def main():
     print(f"  Completed in {time.time() - t0:.1f}s")
 
     # ==========================================
+    # Step 4.5: Build Spatial Graph (NetworkX)
+    # ==========================================
+    print("\n" + "=" * 60)
+    print("STEP 4.5: Building Spatial Graph (NetworkX)")
+    print("=" * 60)
+    t0 = time.time()
+
+    spatial_graph = SpatialGraph()
+    spatial_graph.build(scene_graphs)
+    spatial_graph.export_html(os.path.join(args.output, "spatial_graph.html"))
+    spatial_graph.save_json(os.path.join(args.output, "graph_data.json"))
+    print(f"  Completed in {time.time() - t0:.1f}s")
+
+    # ==========================================
     # Step 5: FAISS Spatial Memory
     # ==========================================
     print("\n" + "=" * 60)
@@ -236,13 +251,13 @@ def main():
     print(f"  Worker near block (<2m): {len(placements)} frames")
 
     # ==========================================
-    # Step 6: VLM Reasoning
+    # Step 6: VLM Reasoning (Graph + Vision)
     # ==========================================
     analysis_json = {}
     if not args.skip_vlm:
         if args.grok_key:
             print("\n" + "=" * 60)
-            print("STEP 6: VLM Reasoning via Grok")
+            print("STEP 6: VLM Reasoning via Grok (Graph + Vision)")
             print("=" * 60)
             t0 = time.time()
 
@@ -251,6 +266,9 @@ def main():
                 model=GROK_MODEL, base_url=GROK_BASE_URL,
                 num_samples=VLM_NUM_SAMPLES, temperature=VLM_TEMPERATURE,
                 max_tokens=VLM_MAX_TOKENS,
+                spatial_graph=spatial_graph,
+                keyframes=keyframes,
+                num_images=5,
             )
             print(f"  Completed in {time.time() - t0:.1f}s")
         else:

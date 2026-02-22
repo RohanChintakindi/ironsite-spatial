@@ -13,3 +13,4 @@ scipy
 Pillow
 pycolmap
 faiss-cpu
+networkx
