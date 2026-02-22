@@ -2,6 +2,7 @@
 Pipeline control endpoints: start a run, upload video, query status.
 """
 
+import hashlib
 import os
 import uuid
 import tempfile
@@ -58,11 +59,17 @@ async def upload_video(file: UploadFile = File(...)):
     if ext not in ('.mp4', '.avi', '.mov', '.mkv', '.webm'):
         raise HTTPException(status_code=400, detail=f"Unsupported format: {ext}")
 
-    dest = os.path.join(UPLOAD_DIR, f"{uuid.uuid4().hex}{ext}")
-    with open(dest, "wb") as f:
-        shutil.copyfileobj(file.file, f)
+    # Use a content hash so re-uploading the same video reuses the same path
+    # (and therefore the same cache directory)
+    content = file.file.read()
+    file_hash = hashlib.md5(content).hexdigest()[:12]
+    dest = os.path.join(UPLOAD_DIR, f"{file_hash}{ext}")
 
-    return {"video_path": dest, "filename": file.filename, "size_mb": round(os.path.getsize(dest) / 1e6, 1)}
+    if not os.path.exists(dest):
+        with open(dest, "wb") as f:
+            f.write(content)
+
+    return {"video_path": dest, "filename": file.filename, "size_mb": round(len(content) / 1e6, 1)}
 
 
 @router.get("/status/{run_id}", response_model=PipelineStatus)
